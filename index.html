@@ -4349,7 +4349,8 @@ function settingsSystems(main){
       delBranch.onclick=()=>confirmModal('Delete "'+branch.label+'"?',
         'Deletes the branch AND all its systems, items, deliveries and staff. Cannot be undone.',
         ()=>{
-          if((DB.branches||[]).length<=1){toast('Cannot delete the only branch','bad');return;}
+          console.log('DELETE: DB.branches=',JSON.stringify(DB.branches),'branch.id=',branch.id);
+          if((DB.branches||[]).length<=1){toast('Cannot delete the only branch — only '+DB.branches.length+' branch(es) found','bad');return;}
           const branchId=branch.id;
           const deletedLabel=branch.label;
           const sysIds=(DB.systems||[]).filter(s=>s.branchId===branchId).map(s=>s.id);
