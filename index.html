@@ -523,29 +523,32 @@ const SUPABASE_URL='https://uslamlraqelmfeyvfqnc.supabase.co';
 const SUPABASE_KEY='sb_publishable_QTNFD2uMPx__eOHoqMuZsA_dOSSzK4-';
 const USE_SUPABASE=SUPABASE_URL!=='YOUR_SUPABASE_URL'; // auto-disables if not configured
 
-let _sb=null; // Supabase client (lazy init)
-let _sbLoading=false;
+let _sb=null; // Supabase client (lazy init — single instance)
 function sb(){
   try{
     if(!_sb&&USE_SUPABASE&&window.supabase&&window.supabase.createClient){
-      _sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+      _sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY,{
+        auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}
+      });
     }
   }catch(e){console.warn('Supabase init failed:',e);}
   return _sb;
 }
+function getAnonClient(){return sb();}
+let _sdkLoading=false;
 // Dynamically load Supabase SDK only when needed
 function loadSupabaseSDK(){
   return new Promise((resolve)=>{
     if(window.supabase){resolve();return;}
-    if(_sbLoading){
+    if(_sdkLoading){
       const check=setInterval(()=>{if(window.supabase){clearInterval(check);resolve();}},100);
       return;
     }
-    _sbLoading=true;
+    _sdkLoading=true;
     const s=document.createElement('script');
     s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
     s.onload=()=>resolve();
-    s.onerror=()=>resolve(); // fail silently
+    s.onerror=()=>resolve();
     document.head.appendChild(s);
   });
 }
@@ -993,7 +996,7 @@ function showRegister(){
     const allEsts=[];
     if(USE_SUPABASE&&window.supabase){
       try{
-        const anonClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+        const anonClient=getAnonClient();
         const{data,error}=await anonClient.from('establishments').select('id,name');
         if(error)console.warn('Branch fetch error:',error.message);
         if(data&&data.length)data.forEach(e=>{if(e.name)allEsts.push({id:e.id,name:e.name});});
@@ -1047,7 +1050,7 @@ async function doRegister(){
   let existingEsts=[];
   if(USE_SUPABASE&&window.supabase){
     try{
-      const anonClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+      const anonClient=getAnonClient();
       const{data}=await anonClient.from('establishments').select('id,name');
       if(data&&data.length)existingEsts=data;
     }catch(e){}
