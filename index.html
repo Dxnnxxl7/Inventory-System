@@ -4345,15 +4345,18 @@ function settingsSystems(main){
     };
     ra.appendChild(renameBtn);
     if(branches.length>1||SESSION.role==='boss'){
-      const delBranch=el('button','btn ghost tiny','Delete branch');
-      delBranch.onclick=()=>confirmModal('Delete "'+branch.label+'"?',
+    const delBranch=el('button','btn ghost tiny','Delete branch');
+    delBranch.dataset.branchId=branch.id;
+    delBranch.dataset.branchLabel=branch.label;
+    delBranch.onclick=function(){
+      const bid=this.dataset.branchId;
+      const blabel=this.dataset.branchLabel;
+      if(!bid){toast('Branch ID missing','bad');return;}
+      if((DB.branches||[]).length<=1){toast('Cannot delete the only branch','bad');return;}
+      confirmModal('Delete "'+blabel+'"?',
         'Deletes the branch AND all its systems, items, deliveries and staff. Cannot be undone.',
         ()=>{
-          console.log('DELETE: DB.branches=',JSON.stringify(DB.branches),'branch.id=',branch.id);
-          if((DB.branches||[]).length<=1){toast('Cannot delete the only branch — only '+DB.branches.length+' branch(es) found','bad');return;}
-          const branchId=branch.id;
-          const deletedLabel=branch.label;
-          const sysIds=(DB.systems||[]).filter(s=>s.branchId===branchId).map(s=>s.id);
+          const sysIds=(DB.systems||[]).filter(s=>s.branchId===bid).map(s=>s.id);
           sysIds.forEach(sid=>{
             DB.items=DB.items.filter(i=>i.scope!==sid);
             DB.deliveries=DB.deliveries.filter(d=>d.scope!==sid);
@@ -4364,15 +4367,15 @@ function settingsSystems(main){
             if(DB.storeTypes)delete DB.storeTypes[sid];
             if(DB.categoryFood)delete DB.categoryFood[sid];
           });
-          DB.systems=(DB.systems||[]).filter(s=>s.branchId!==branchId);
-          DB.branches=(DB.branches||[]).filter(b=>b.id!==branchId);
+          DB.systems=(DB.systems||[]).filter(s=>s.branchId!==bid);
+          DB.branches=(DB.branches||[]).filter(b=>b.id!==bid);
           if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
-          BRANCH_TAB=(DB.branches[0]?.id)||null;
-          // Notify owner
+          BRANCH_TAB=DB.branches[0]?.id||null;
           DB.notifications=DB.notifications||[];
-          DB.notifications.unshift({id:uid(),scope:'boss',text:'Branch "'+deletedLabel+'" was deleted by '+SESSION.name+'.',type:'info',ts:now(),read:false});
-          save();buildNav();render();toast(deletedLabel+' deleted','good');
+          DB.notifications.unshift({id:uid(),scope:'boss',text:'Branch "'+blabel+'" was deleted by '+SESSION.name+'.',type:'info',ts:now(),read:false});
+          save();buildNav();render();toast(blabel+' deleted','good');
         });
+    };
       ra.appendChild(delBranch);
     }
     hdr.appendChild(ra);
