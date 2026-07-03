@@ -808,6 +808,41 @@ let BRANCH_TAB=null; // active branch sub-tab in Branches name
 let CATS_TAB='kitchen'; // active sub-tab on Categories page
 let DELIV_CAT_FILTER=''; // active category filter on Deliveries page ('' = all)
 
+function currentSessionState(){
+  return {
+    id:SESSION?.id,
+    estId:ACTIVE_EST_ID,
+    page:CURRENT,
+    scope:SCOPE,
+    branchId:BRANCH_TAB,
+    histTab:HIST_TAB,
+    delivSubtab:DELIV_SUBTAB,
+    orderSubtab:ORDER_SUBTAB,
+    stocksSubtab:STOCKS_SUBTAB,
+    stocksCat:STOCKS_CAT,
+    settingsTab:SETTINGS_TAB,
+    catsTab:CATS_TAB,
+    delivCatFilter:DELIV_CAT_FILTER
+  };
+}
+function saveSessionState(){
+  if(!SESSION)return;
+  try{sessionStorage.setItem('stockline_session',JSON.stringify(currentSessionState()));}catch(e){}
+}
+function applySessionState(d){
+  if(!d)return;
+  if(d.page)CURRENT=d.page;
+  if(d.scope)SCOPE=d.scope;
+  if(d.branchId)BRANCH_TAB=d.branchId;
+  if(d.histTab)HIST_TAB=d.histTab;
+  if(d.delivSubtab)DELIV_SUBTAB=d.delivSubtab;
+  if(d.orderSubtab)ORDER_SUBTAB=d.orderSubtab;
+  if(d.stocksSubtab)STOCKS_SUBTAB=d.stocksSubtab;
+  if(d.stocksCat!=null)STOCKS_CAT=d.stocksCat;
+  if(d.settingsTab)SETTINGS_TAB=d.settingsTab;
+  if(d.catsTab)CATS_TAB=d.catsTab;
+  if(d.delivCatFilter!=null)DELIV_CAT_FILTER=d.delivCatFilter;
+}
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -1483,7 +1518,7 @@ function finalizeLogin(){
     BRANCH_TAB=userBranchId;
   }
   // persist session
-  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT}));}catch(e){}
+  saveSessionState();
   applyBrand();
   $('#auth').style.display='none';$('#app').style.display='block';
   if(SESSION.role==='boss')subscribeRealtime();
@@ -1623,17 +1658,19 @@ applyBrand();renderQuickRoles();
   try{
     const saved=sessionStorage.getItem('stockline_session');
     if(saved){
-      const{id,estId,page}=JSON.parse(saved);
+      const savedState=JSON.parse(saved);
+      const{id,estId,page}=savedState;
       if(estId&&estId!==ACTIVE_EST_ID){ACTIVE_EST_ID=estId;DB=load();}
       const user=DB.users.find(x=>x.id===id);
       if(user){
         SESSION=user;
         const systems=DB.systems||[];
         SCOPE=user.role==='boss'?(systems[0]?.id||'kitchen'):(user.scope||'kitchen');
+        applySessionState(savedState);
+        if(!savedState.page)CURRENT=page||'stocks';
         applyBrand();
         $('#auth').style.display='none';$('#app').style.display='block';
         if(user.role==='boss')subscribeRealtime();
-        CURRENT=page||'stocks';
         buildNav();renderBell();
         resetIdleLogoutTimer();
         setTimeout(()=>render(),50);
@@ -1711,7 +1748,7 @@ function switchBranchInPlace(branchId){
   CURRENT='stocks';
   STOCKS_SUBTAB='stocks';
   STOCKS_CAT='';
-  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT,branchId:BRANCH_TAB,scope:SCOPE}));}catch(e){}
+  saveSessionState();
   buildNav();
   renderBell();
   render();
@@ -2042,11 +2079,11 @@ function render(){
   // Keep topbar in sync with current branch
   applyBrand();
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
-  // save current page to session so refresh restores it
-  try{const s=sessionStorage.getItem('stockline_session');if(s){const d=JSON.parse(s);d.page=CURRENT;sessionStorage.setItem('stockline_session',JSON.stringify(d));}}catch(e){}
+  // save current page/sub-tabs to session so refresh restores the exact view
+  saveSessionState();
   const routes={
     stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,
-    usage:pageUsage,temperature:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
+    usage:pageUsage,temps:pageTemps,temperature:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
   main.innerHTML='';
@@ -5149,6 +5186,11 @@ setInterval(()=>{checkPendingRequests();},30*1000);
 </script>
 </body>
 </html>
+
+
+
+
+
 
 
 
