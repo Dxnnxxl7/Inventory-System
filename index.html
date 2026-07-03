@@ -1788,6 +1788,10 @@ function activeScope(){
 }
 function render(){
   closeNav();
+  // Re-enable realtime when navigating away from settings
+  if(CURRENT!=='settings'&&SUPPRESS_REALTIME){
+    SUPPRESS_REALTIME=false;
+  }
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
   // save current page to session so refresh restores it
   try{const s=sessionStorage.getItem('stockline_session');if(s){const d=JSON.parse(s);d.page=CURRENT;sessionStorage.setItem('stockline_session',JSON.stringify(d));}}catch(e){}
@@ -4009,6 +4013,9 @@ function changeRoleModal(u){
 }
 
 function pageSettings(main){
+  // Suppress realtime re-renders while on settings to prevent modal interference
+  SUPPRESS_REALTIME=true;
+  // Re-enable when navigating away (handled in render())
   const isBoss=SESSION.role==='boss';
   const isIncharge=SESSION.role==='incharge';
   main.appendChild(headEl(isBoss?'Owner controls':'Account','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
@@ -4365,6 +4372,7 @@ function settingsSystems(main){
           'Delete "'+_blabel+'"?',
           'All items, systems and staff in this branch will be removed. This cannot be undone.',
           ()=>{
+            // Delete from DB in memory
             const sysIds=(DB.systems||[]).filter(s=>s.branchId===_bid).map(s=>s.id);
             sysIds.forEach(sid=>{
               DB.items=(DB.items||[]).filter(i=>i.scope!==sid);
@@ -4380,8 +4388,18 @@ function settingsSystems(main){
             DB.branches=currentBranches.filter(b=>b.id!==_bid);
             if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
             BRANCH_TAB=DB.branches[0]?.id||null;
-            save();
-            setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},2000);
+            // Save to localStorage immediately (synchronous)
+            localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+            // Save to Supabase (async) — realtime stays suppressed until complete
+            if(USE_SUPABASE&&SUPABASE_USER){
+              sbSave().then(()=>{
+                setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);
+              }).catch(()=>{
+                setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);
+              });
+            }else{
+              setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},500);
+            }
             buildNav();render();toast(_blabel+' deleted','good');
           },
           ()=>{SUPPRESS_REALTIME=false;subscribeRealtime();}
