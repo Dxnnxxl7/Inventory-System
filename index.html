@@ -431,6 +431,11 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <label>Your name</label>
       <div class="inwrap"><input id="regName" placeholder="e.g. Daniel" autocomplete="name"></div>
     </div>
+    <div class="field" id="regUsernameField">
+      <label>Username</label>
+      <div class="inwrap"><input id="regUsername" placeholder="e.g. daniel123" autocomplete="username"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">Used to log in. No spaces or special characters.</div>
+    </div>
     <div class="field" id="regEstField">
       <label>Branch name</label>
       <div class="inwrap"><input id="regEst" placeholder="e.g. The Anchor, Catering Co."></div>
@@ -977,6 +982,7 @@ function showRegister(){
   $('#register').style.display='flex';
   $('#regMsg').textContent='';
   if($('#regName'))$('#regName').value='';
+  if($('#regUsername'))$('#regUsername').value='';
   if($('#regEmail'))$('#regEmail').value='';
   if($('#regPass'))$('#regPass').value='';
   if($('#regEst'))$('#regEst').value='';
@@ -1040,6 +1046,9 @@ function showRegister(){
     const hasOwner=allBranches.length>0;
     if(estF)estF.style.display=hasOwner?'none':'block';
     if(estCF)estCF.style.display=hasOwner?'block':'none';
+    // Show username field for staff (owner uses email as username)
+    const usernameF=$('#regUsernameField');
+    if(usernameF)usernameF.style.display=hasOwner?'block':'none';
     if(sub)sub.textContent=hasOwner?'Select your branch to request access.':'Create your owner account to get started.';
     if(btn)btn.textContent=hasOwner?'Request to join':'Create account';
 
@@ -1064,6 +1073,8 @@ function showLogin(){
 async function doRegister(){
   const name=$('#regName').value.trim();
   const est=$('#regEst')?$('#regEst').value.trim():'';
+  const usernameRaw=$('#regUsername')?$('#regUsername').value.trim():'';
+  const username=usernameRaw.toLowerCase().replace(/[^a-z0-9_]/g,'');
   const email=$('#regEmail').value.trim();
   const pass=$('#regPass').value;
   if(!name){$('#regMsg').textContent='Enter your name.';return;}
@@ -1108,8 +1119,11 @@ async function doRegister(){
     const selectedBranchId=selData.branchId||'branch_1';
     const estDb=loadEst(selectedEstId);
     if(!estDb){$('#regMsg').textContent='Could not load branch data.';$('#regBtn').disabled=false;return;}
+    const loginUsername=username||email; // staff use username, fallback to email
     const firstScope=(selData.systemIds&&selData.systemIds[0])||(estDb.systems||[]).find(s=>s.branchId===selectedBranchId)?.id||(estDb.systems||[])[0]?.id||'kitchen';
-    const newUser={id:uid(),name,username:email,pass,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
+    // Validate username not taken
+    if(username&&(estDb.users||[]).find(u=>u.username===loginUsername)){$('#regMsg').textContent='That username is already taken.';$('#regBtn').disabled=false;return;}
+    const newUser={id:uid(),name,username:loginUsername,pass,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
     estDb.users=estDb.users||[];
     estDb.users.push(newUser);
     // Notify
