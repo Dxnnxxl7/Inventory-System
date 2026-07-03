@@ -1013,17 +1013,15 @@ function showRegister(){
         if(data&&data.length){
           data.forEach(e=>{
             try{
-              const d=e.data||{};
-              const bs=d.branches||[];
               const ss=d.systems||[];
-              if(bs.length){
-                bs.forEach(b=>{
-                  const sysIds=ss.filter(s=>s.branchId===b.id).map(s=>s.id);
-                  allBranches.push({estId:e.id,branchId:b.id,label:b.label,systemIds:sysIds});
-                });
-              }else{
-                allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Main',systemIds:ss.map(s=>s.id)});
+              let bs=[...(d.branches||[])];
+              if(!bs.find(b=>b.id==='branch_1')){
+                bs.unshift({id:'branch_1',label:d.venue?.name||e.name||d.brand?.appName||'Main Branch',short:'MAIN'});
               }
+              bs.forEach(b=>{
+                const sysIds=ss.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
+                allBranches.push({estId:e.id,branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
+              });
             }catch(err){
               // fallback if data field has issues
               allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Branch',systemIds:[]});
@@ -1032,13 +1030,17 @@ function showRegister(){
         }
       }catch(e){console.warn('Branch fetch failed:',e.message||e);}
     }
-    // Also check localStorage
     const defaultDb=loadEst('default');
-    if(defaultDb&&defaultDb.branches){
-      defaultDb.branches.forEach(b=>{
+    if(defaultDb){
+      let bs=[...(defaultDb.branches||[])];
+      if(!bs.find(b=>b.id==='branch_1')){
+        bs.unshift({id:'branch_1',label:defaultDb.venue?.name||defaultDb.brand?.appName||'Main Branch',short:'MAIN'});
+      }
+      const ss=defaultDb.systems||[];
+      bs.forEach(b=>{
         if(!allBranches.find(x=>x.estId==='default'&&x.branchId===b.id)){
-          const sysIds=(defaultDb.systems||[]).filter(s=>s.branchId===b.id).map(s=>s.id);
-          allBranches.push({estId:'default',branchId:b.id,label:b.label,systemIds:sysIds});
+          const sysIds=ss.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
+          allBranches.push({estId:'default',branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
         }
       });
     }
@@ -1256,7 +1258,10 @@ function renderEstPicker(loginUser){
     return;
   }
 
-  const branches=DB.branches||[];
+  let branches=[...(DB.branches||[])];
+  if(!branches.find(b=>b.id==='branch_1')){
+    branches.unshift({id:'branch_1',label:DB.venue?.name||DB.brand?.appName||'Main Branch',short:'MAIN'});
+  }
 
   if(branches.length<=1){
     SESSION=loginUser;
@@ -1279,14 +1284,14 @@ function renderEstPicker(loginUser){
     card.style.cssText='margin-bottom:10px;cursor:pointer;transition:border .15s;border:2px solid transparent;';
     card.onmouseenter=()=>card.style.borderColor='var(--brass)';
     card.onmouseleave=()=>card.style.borderColor='transparent';
-    const sys=(DB.systems||[]).filter(s=>s.branchId===branch.id);
+    const sys=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branch.id);
     const itemCount=(DB.items||[]).filter(i=>sys.some(s=>s.id===i.scope)&&!i.unused).length;
     const staffCount=(DB.users||[]).filter(u=>u.role!=='boss'&&!u.pending&&sys.some(s=>s.id===u.scope)).length;
     card.innerHTML=`<div class="flex-between"><b style="font-size:17px">${esc(branch.label)}</b><span class="chip" style="font-size:11px">${sys.length} system${sys.length!==1?'s':''}</span></div><div class="suptag" style="margin-top:4px">${itemCount} items &middot; ${staffCount} staff</div>`;
     card.onclick=()=>{
       SESSION=loginUser;
       BRANCH_TAB=branch.id;
-      const firstSys=(DB.systems||[]).find(s=>s.branchId===branch.id);
+      const firstSys=(DB.systems||[]).find(s=>(s.branchId||'branch_1')===branch.id);
       SCOPE=firstSys?.id||(DB.systems||[])[0]?.id||'';
       finalizeLogin();
     };
