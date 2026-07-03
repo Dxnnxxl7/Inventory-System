@@ -698,17 +698,12 @@ function load(){
       if(!d.allergens)d.allergens={};
       if(!d.wastage)d.wastage=[];
       if(!d.stockHistory)d.stockHistory=[];
-      if(!d.branches||!d.branches.length){
-        const mainName=d.venue?.name||d.brand?.appName||'Main';
-        d.branches=[{id:'branch_1',label:mainName,short:(mainName.slice(0,3)).toUpperCase()}];
-        if(d.systems)d.systems.forEach(s=>{s.branchId='branch_1';});
-      }else{
-        // fix any systems with missing or invalid branchId
-        if(d.systems)d.systems.forEach(s=>{
-          if(!s.branchId||!d.branches.find(b=>b.id===s.branchId))
-            s.branchId=d.branches[0]?.id||'branch_1';
-        });
+      if(!d.branches)d.branches=[];
+      if(!d.branches.find(b=>b.id==='branch_1')){
+        const mainName=d.venue?.name||d.brand?.appName||'Main Branch';
+        d.branches.unshift({id:'branch_1',label:mainName,short:(mainName.slice(0,3)||'MAI').toUpperCase()});
       }
+      if(d.systems)d.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
       if(!d.categoryFood)d.categoryFood={kitchen:{},restaurant:{}};
       if(!d.notifications)d.notifications=[];
       if(d.items)d.items.forEach(it=>{
@@ -1374,8 +1369,9 @@ function migrateLegacy(d){
   if(!d.brand.kitchenShort)d.brand.kitchenShort='SYS1';
   if(!d.brand.restaurantShort)d.brand.restaurantShort='SYS2';
   if(!d.systems)d.systems=[{id:'kitchen',label:d.brand.kitchenLabel,short:d.brand.kitchenShort,branchId:'branch_1'},{id:'restaurant',label:d.brand.restaurantLabel,short:d.brand.restaurantShort,branchId:'branch_1'}];
-  if(!d.branches||!d.branches.length){const mn=d.venue?.name||d.brand?.appName||'Main';d.branches=[{id:'branch_1',label:mn,short:mn.slice(0,3).toUpperCase()}];if(d.systems)d.systems.forEach(s=>{s.branchId='branch_1';});}
-  else{if(d.systems)d.systems.forEach(s=>{if(!s.branchId||!d.branches.find(b=>b.id===s.branchId))s.branchId=d.branches[0]?.id||'branch_1';});}
+  if(!d.branches)d.branches=[];
+  if(!d.branches.find(b=>b.id==='branch_1')){const mn=d.venue?.name||d.brand?.appName||'Main Branch';d.branches.unshift({id:'branch_1',label:mn,short:(mn.slice(0,3)||'MAI').toUpperCase()});}
+  if(d.systems)d.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
   if(!d.storeTypes)d.storeTypes={kitchen:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}],restaurant:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}]};
   if(!d.items)d.items=[];if(!d.deliveries)d.deliveries=[];if(!d.usage)d.usage=[];
   if(!d.suppliers)d.suppliers=[];if(!d.users||!d.users.length)d.users=[{id:'boss',name:'Owner',username:'boss',pass:'boss123',role:'boss'}];
@@ -4326,13 +4322,13 @@ function settingsAppearance(main){
 function settingsSystems(main){
   const isBoss=SESSION.role==='boss';
   const systems=DB.systems||[];
-  if(!DB.branches||!DB.branches.length){
-    const mn=DB.venue?.name||DB.brand?.appName||'Main';
-    DB.branches=[{id:'branch_1',label:mn,short:mn.slice(0,3).toUpperCase()}];
-    if(DB.systems)DB.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
-    // don't save() here — would trigger realtime loop
-    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+  // Ensure branch_1 always exists (migration handles this on load, safety net here)
+  if(!DB.branches)DB.branches=[];
+  if(!DB.branches.find(b=>b.id==='branch_1')){
+    const mn=DB.venue?.name||DB.brand?.appName||'Main Branch';
+    DB.branches.unshift({id:'branch_1',label:mn,short:(mn.slice(0,3)||'MAI').toUpperCase()});
   }
+  if(systems)systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
   const branches=DB.branches;
 
   // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
