@@ -1249,16 +1249,19 @@ function switchToEstablishment(id){
 }
 
 function renderEstPicker(loginUser){
-  const ests=getEstablishments();
-  // Build list: default first, then all others
-  const all=[
-    {id:'default', name:(()=>{const d=loadEst('default');return(d?.venue?.name)||(d?.brand?.appName)||'Main';})()},
-    ...ests.map(e=>({id:e.id,name:e.name}))
-  ];
-
-  if(all.length<=1){
-    // Only one — go straight in
+  // Non-boss: straight in, no picker
+  if(loginUser.role!=='boss'){
     SESSION=loginUser;
+    finalizeLogin();
+    return;
+  }
+
+  const branches=DB.branches||[];
+
+  if(branches.length<=1){
+    SESSION=loginUser;
+    const firstSys=(DB.systems||[]).find(s=>s.branchId===(branches[0]?.id||'branch_1'))||(DB.systems||[])[0];
+    if(firstSys)SCOPE=firstSys.id;
     finalizeLogin();
     return;
   }
@@ -1268,27 +1271,23 @@ function renderEstPicker(loginUser){
   const main=$('#main');
   main.innerHTML='';
   const wrap=el('div');
-  wrap.style.cssText='max-width:400px;margin:80px auto;padding:20px;';
-  wrap.appendChild(headEl('Owner','Choose Branch','Which venue do you want to open?'));
+  wrap.style.cssText='max-width:420px;margin:80px auto;padding:20px;';
+  wrap.appendChild(headEl('Owner','Choose Branch','Which branch do you want to open?'));
 
-  all.forEach(est=>{
+  branches.forEach(branch=>{
     const card=el('div','card pad');
-    card.style.cssText='margin-bottom:10px;cursor:pointer;border:2px solid '+(est.id===ACTIVE_EST_ID?'var(--brass)':'transparent')+';';
-    card.innerHTML=`<div class="flex-between"><b style="font-size:16px">${esc(est.name)}</b>${est.id===ACTIVE_EST_ID?'<span class="chip ok" style="font-size:11px">Active</span>':''}</div>`;
+    card.style.cssText='margin-bottom:10px;cursor:pointer;transition:border .15s;border:2px solid transparent;';
+    card.onmouseenter=()=>card.style.borderColor='var(--brass)';
+    card.onmouseleave=()=>card.style.borderColor='transparent';
+    const sys=(DB.systems||[]).filter(s=>s.branchId===branch.id);
+    const itemCount=(DB.items||[]).filter(i=>sys.some(s=>s.id===i.scope)&&!i.unused).length;
+    const staffCount=(DB.users||[]).filter(u=>u.role!=='boss'&&!u.pending&&sys.some(s=>s.id===u.scope)).length;
+    card.innerHTML=`<div class="flex-between"><b style="font-size:17px">${esc(branch.label)}</b><span class="chip" style="font-size:11px">${sys.length} system${sys.length!==1?'s':''}</span></div><div class="suptag" style="margin-top:4px">${itemCount} items &middot; ${staffCount} staff</div>`;
     card.onclick=()=>{
-      if(est.id===ACTIVE_EST_ID){
-        // already on this one, just go in
-        SESSION=loginUser;
-        finalizeLogin();
-        return;
-      }
-      // switch to chosen establishment
-      save(); // save current first
-      ACTIVE_EST_ID=est.id;
-      DB=load();
-      applyBrand();
-      // find boss account in the new branch
-      SESSION=DB.users.find(x=>x.role==='boss')||DB.users[0];
+      SESSION=loginUser;
+      BRANCH_TAB=branch.id;
+      const firstSys=(DB.systems||[]).find(s=>s.branchId===branch.id);
+      SCOPE=firstSys?.id||(DB.systems||[])[0]?.id||'';
       finalizeLogin();
     };
     wrap.appendChild(card);
@@ -1418,10 +1417,11 @@ function doLogin(){
   const pass=$('#loginPass').value;
   if(!input_||!pass){$('#authMsg').textContent='Enter your email or username and password.';return;}
   const isEmail=input_.includes('@');
-  // Check local users first — staff/incharge always use local auth
+  // Username/email → local auth (staff / incharge / owner fallback)
+  const inputLower=input_.toLowerCase();
   const localUser=DB.users.find(x=>
-    x.username.toLowerCase()===input_.toLowerCase()||
-    (x.email&&x.email.toLowerCase()===input_.toLowerCase())
+    x.username.toLowerCase()===inputLower||
+    (x.email&&x.email.toLowerCase()===inputLower)
   );
   if(localUser&&localUser.role!=='boss'){
     if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
@@ -1459,7 +1459,7 @@ function doLogin(){
           boss.email=input_;boss.pass=pass;
           if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
           save();SESSION=boss;$('#authMsg').textContent='';
-          if(ests.length>1){renderEstPicker(boss);return;}
+          renderEstPicker(boss);return;
           finalizeLogin();
         }
       });
@@ -1472,7 +1472,7 @@ function doLogin(){
   if(!user||user.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
   SESSION=user;
-  if(user.role==='boss'&&getEstablishments().length>0){renderEstPicker(user);return;}
+  if(user.role==='boss'){renderEstPicker(user);return;}
   finalizeLogin();
 }
 function logout(){
@@ -1827,10 +1827,9 @@ function activeScope(){
     if(!systems.find(s=>s.id===SCOPE)&&systems.length)SCOPE=systems[0].id;
     return SCOPE;
   }
-  // For staff/incharge — use their assigned scope, fall back to first available system
+  // Staff/incharge: always locked to their assigned scope
   const sc=SESSION.scope;
   if(sc&&systems.find(s=>s.id===sc))return sc;
-  // scope not found — fall back to first system
   return systems[0]?.id||SCOPE;
 }
 function render(){
@@ -1854,19 +1853,14 @@ function render(){
 /* scope tabs (boss everywhere, in-charge view-only label) */
 function scopeTabs(container,onChange){
   const allSystems=DB.systems||[];
-  // Find which branch the current scope belongs to
+  if(SESSION.role==='staff')return;
+  // Non-boss locked to their own scope — no tabs needed
+  if(SESSION.role==='incharge')return;
+  // Boss: find which branch current SCOPE belongs to, show only that branch's systems
   const currentSys=allSystems.find(s=>s.id===SCOPE)||allSystems[0];
   const currentBranchId=currentSys?.branchId||'branch_1';
-  // Only show systems from the same branch
   const systems=allSystems.filter(s=>s.branchId===currentBranchId);
-  if(SESSION.role==='staff')return;
-  // Hide tabs if only 1 system in this branch
   if(systems.length<=1)return;
-  if(SESSION.role==='incharge'){
-    const lbl=el('div','scope-tabs');
-    const b=el('button','on '+SESSION.scope,scopeLabel(SESSION.scope));
-    lbl.appendChild(b);container.appendChild(lbl);return;
-  }
   const tabs=el('div','scope-tabs');
   systems.forEach(sys=>{
     const b=el('button',SCOPE===sys.id?'on '+sys.id:'',sys.label);
@@ -2880,14 +2874,23 @@ function deliveryModal(scope){
   let delivScope=scope;
   const sups=DB.suppliers;
   const body=el('div');
-  // system selector — boss and in-charge can switch, staff can also choose
+  // Boss sees all systems; incharge/staff locked to their own scope only
   const scopeSeg=el('div','seg');scopeSeg.style.marginBottom='14px';
-  (DB.systems||[{id:'kitchen'},{id:'restaurant'}]).forEach(s=>{
-    const b=el('button',delivScope===s.id?'on '+s.id:'',scopeLabel(s.id));
-    b.onclick=()=>{delivScope=s.id;[...scopeSeg.children].forEach(x=>x.className='');b.className='on '+s.id;};
-    scopeSeg.appendChild(b);
-  });
-  body.appendChild(field('Delivering to',scopeSeg));
+  const visibleSystems=SESSION.role==='boss'
+    ?(DB.systems||[])
+    :(DB.systems||[]).filter(s=>s.id===SESSION.scope);
+  // Only show selector if boss has multiple systems
+  if(SESSION.role==='boss'&&visibleSystems.length>1){
+    visibleSystems.forEach(s=>{
+      const b=el('button',delivScope===s.id?'on '+s.id:'',scopeLabel(s.id));
+      b.onclick=()=>{delivScope=s.id;[...scopeSeg.children].forEach(x=>x.className='');b.className='on '+s.id;};
+      scopeSeg.appendChild(b);
+    });
+    body.appendChild(field('Delivering to',scopeSeg));
+  }else{
+    // Non-boss: locked to their scope, show as label
+    delivScope=SESSION.role==='boss'?(visibleSystems[0]?.id||scope):SESSION.scope;
+  }
   const items=()=>DB.items.filter(i=>!i.unused); // all items both systems
   const supI=selectEl([{label:'— direct / other —',value:''},...sups.map(s=>({label:s.name,value:s.id}))]);
   body.appendChild(field('Supplier',supI));
@@ -4068,7 +4071,7 @@ function pageSettings(main){
   main.appendChild(headEl(isBoss?'Owner controls':'Account','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
 
   const allTabs=[
-    {id:'systems',label:'Branches name',roles:['boss','incharge']},
+    {id:'systems',label:'Branches name',roles:['boss']},
     {id:'account',label:'Account',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
   ].filter(t=>t.roles.includes(SESSION.role));
@@ -4083,7 +4086,7 @@ function pageSettings(main){
   });
   main.appendChild(tabRow);
 
-  if(SETTINGS_TAB==='systems'&&(isBoss||isIncharge))settingsSystems(main);
+  if(SETTINGS_TAB==='systems'&&isBoss)settingsSystems(main);
   else if(SETTINGS_TAB==='data')settingsData(main);
   else settingsAccount(main);
 }
@@ -4236,10 +4239,8 @@ function settingsTeam(main){
         saveBtn.onclick=()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
-          if(DB.users.some(x=>x.id!==u.id&&x.username===userI.value.trim())){toast('Username already taken','bad');return;}
-          u.name=nameI.value.trim();u.username=userI.value.trim();
-          if(passI.value.trim())u.pass=passI.value.trim();
-          u.role=roleI.value;u.scope=scopeI.value;
+          if(DB.users.some(x=>x.id!==u.id&&x.username.toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
         editForm.appendChild(saveBtn);
@@ -4248,8 +4249,8 @@ function settingsTeam(main){
         saveBtn.onclick=()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
-          if(DB.users.some(x=>x.id!==u.id&&x.username===userI.value.trim())){toast('Username already taken','bad');return;}
-          u.name=nameI.value.trim();u.username=userI.value.trim();
+          if(DB.users.some(x=>x.id!==u.id&&x.username.toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
           if(passI.value.trim())u.pass=passI.value.trim();
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
