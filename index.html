@@ -4352,6 +4352,7 @@ function settingsSystems(main){
     const delBranch=el('button','btn ghost tiny','Delete branch');
     delBranch.style.color='var(--bad)';
     delBranch.onclick=(e)=>{
+      toast('Delete clicked','good');
       e.stopPropagation();
       e.preventDefault();
       const currentBranches=DB.branches||[];
