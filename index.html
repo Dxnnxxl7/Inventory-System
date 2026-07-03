@@ -4438,7 +4438,9 @@ function settingsSystems(main){
   }
 
   // Systems table
-  card.innerHTML+='<div class="nav-group-label" style="padding:0 0 8px">Systems</div>';
+  const systemsLabel=el('div','nav-group-label','Systems');
+  systemsLabel.style.padding='0 0 8px';
+  card.appendChild(systemsLabel);
   if(branchSystems.length){
     const tw=el('div','tablewrap');
     const t=el('table');t.style.width='100%';
