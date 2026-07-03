@@ -4356,28 +4356,30 @@ function settingsSystems(main){
       e.preventDefault();
       const currentBranches=DB.branches||[];
       if(currentBranches.length<=1){toast('Cannot delete the only branch','bad');return;}
-      confirmModal(
-        'Delete "'+_blabel+'"?',
-        'All items, systems and staff in this branch will be removed. This cannot be undone.',
-        ()=>{
-          const sysIds=(DB.systems||[]).filter(s=>s.branchId===_bid).map(s=>s.id);
-          sysIds.forEach(sid=>{
-            DB.items=(DB.items||[]).filter(i=>i.scope!==sid);
-            DB.deliveries=(DB.deliveries||[]).filter(d=>d.scope!==sid);
-            DB.suppliers=(DB.suppliers||[]).filter(s=>s.scope!==sid);
-            DB.usage=(DB.usage||[]).filter(u=>u.scope!==sid);
-            DB.users=(DB.users||[]).filter(u=>u.role==='boss'||u.scope!==sid);
-            if(DB.categories)delete DB.categories[sid];
-            if(DB.storeTypes)delete DB.storeTypes[sid];
-            if(DB.categoryFood)delete DB.categoryFood[sid];
-          });
-          DB.systems=(DB.systems||[]).filter(s=>s.branchId!==_bid);
-          DB.branches=currentBranches.filter(b=>b.id!==_bid);
-          if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
-          BRANCH_TAB=DB.branches[0]?.id||null;
-          save();buildNav();render();toast(_blabel+' deleted','good');
-        }
-      );
+      setTimeout(()=>{
+        confirmModal(
+          'Delete "'+_blabel+'"?',
+          'All items, systems and staff in this branch will be removed. This cannot be undone.',
+          ()=>{
+            const sysIds=(DB.systems||[]).filter(s=>s.branchId===_bid).map(s=>s.id);
+            sysIds.forEach(sid=>{
+              DB.items=(DB.items||[]).filter(i=>i.scope!==sid);
+              DB.deliveries=(DB.deliveries||[]).filter(d=>d.scope!==sid);
+              DB.suppliers=(DB.suppliers||[]).filter(s=>s.scope!==sid);
+              DB.usage=(DB.usage||[]).filter(u=>u.scope!==sid);
+              DB.users=(DB.users||[]).filter(u=>u.role==='boss'||u.scope!==sid);
+              if(DB.categories)delete DB.categories[sid];
+              if(DB.storeTypes)delete DB.storeTypes[sid];
+              if(DB.categoryFood)delete DB.categoryFood[sid];
+            });
+            DB.systems=(DB.systems||[]).filter(s=>s.branchId!==_bid);
+            DB.branches=currentBranches.filter(b=>b.id!==_bid);
+            if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
+            BRANCH_TAB=DB.branches[0]?.id||null;
+            save();buildNav();render();toast(_blabel+' deleted','good');
+          }
+        );
+      },10);
     };
     ra.appendChild(delBranch);
     hdr.appendChild(ra);
