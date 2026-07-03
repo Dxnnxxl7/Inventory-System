@@ -1402,18 +1402,30 @@ function renderAuth(){
 }
 function finalizeLogin(){
   const systems=DB.systems||[];
+  const branches=DB.branches||[];
   if(SESSION.role==='boss'){
-    // boss: use SCOPE if valid, else first system
-    if(!systems.find(s=>s.id===SCOPE))SCOPE=systems[0]?.id||'';
+    // Ensure BRANCH_TAB is set to a valid branch
+    if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
+      BRANCH_TAB=branches[0]?.id||null;
+    }
+    // SCOPE must be a system within the current BRANCH_TAB
+    const branchSystems=systems.filter(s=>(s.branchId||'branch_1')===BRANCH_TAB);
+    const validScope=branchSystems.find(s=>s.id===SCOPE);
+    if(!validScope){
+      SCOPE=branchSystems[0]?.id||systems[0]?.id||'';
+    }
   }else{
     // staff/incharge: use their assigned scope, fall back to first system
     const assignedScope=SESSION.scope;
     SCOPE=(assignedScope&&systems.find(s=>s.id===assignedScope))?assignedScope:(systems[0]?.id||'');
     if(!SESSION.scope||!systems.find(s=>s.id===SESSION.scope)){
-      SESSION.scope=SCOPE; // update in memory
+      SESSION.scope=SCOPE;
     }
+    // Set BRANCH_TAB to match their branch
+    const userBranchId=SESSION.branchId||(systems.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
+    BRANCH_TAB=userBranchId;
   }
-  // persist session so page refresh doesn't log out
+  // persist session
   try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT}));}catch(e){}
   applyBrand();
   $('#auth').style.display='none';$('#app').style.display='block';
@@ -1568,15 +1580,13 @@ function navConfig(){
   if(role==='boss'){
     return {
       main:[...inOrder],
-      admin:[{id:'cats',ic:'🗃️',label:'Categories'},
-        {id:'settings',ic:'⚙️',label:'Settings'}]
+      admin:[{id:'settings',ic:'⚙️',label:'Settings'}]
     };
   }
   if(role==='incharge'){
     return {
       main:[...inOrder],
-      admin:[{id:'cats',ic:'🗃️',label:'Categories'},
-        {id:'settings',ic:'⚙️',label:'Settings'}]
+      admin:[{id:'settings',ic:'⚙️',label:'Settings'}]
     };
   }
   // staff
@@ -1646,7 +1656,15 @@ function buildNav(){
     cfg.admin.forEach(it=>sb.appendChild(mkItem(it)));
   }
   const foot=el('div','side-foot');
-  foot.innerHTML=`<div class="who"><b>${esc(SESSION.name)}</b>${labelForUser(SESSION)}</div>`;
+  if(SESSION.role==='boss'){
+    const currentBranch=(DB.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB.branches||[])[0];
+    if(currentBranch){
+      const branchRow=el('div');branchRow.style.cssText='margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)';
+      branchRow.innerHTML=`<div class="suptag" style="font-size:10px;margin-bottom:2px">CURRENT BRANCH</div><b style="font-size:13px">${esc(currentBranch.label)}</b>`;
+      foot.appendChild(branchRow);
+    }
+  }
+  foot.innerHTML+=`<div class="who"><b>${esc(SESSION.name)}</b>${labelForUser(SESSION)}</div>`;
   const lo=el('button','btn ghost sm','Sign out');lo.style.width='100%';lo.onclick=logout;
   foot.appendChild(lo);sb.appendChild(foot);
   // scope badge
@@ -1832,10 +1850,21 @@ function input(val,ph,type){const i=el('input');i.value=val??'';if(ph)i.placehol
 function selectEl(opts,val){const s=el('select');opts.forEach(o=>{const op=el('option',null,esc(o.label));op.value=o.value;if(o.value===val)op.selected=true;s.appendChild(op);});return s;}
 
 /* ---------- ROUTER ---------- */
+// Returns only the systems visible to the current user (branch-locked)
+function visibleSystems(){
+  const all=DB.systems||[];
+  if(SESSION.role==='boss'){
+    const bid=BRANCH_TAB||(all.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
+    return all.filter(s=>(s.branchId||'branch_1')===bid);
+  }
+  return all.filter(s=>s.id===SESSION.scope);
+}
 function activeScope(){
   const systems=DB.systems||[];
   if(SESSION.role==='boss'){
-    if(!systems.find(s=>s.id===SCOPE)&&systems.length)SCOPE=systems[0].id;
+    const branchId=BRANCH_TAB||(systems.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
+    const branchSystems=systems.filter(s=>(s.branchId||'branch_1')===branchId);
+    if(!branchSystems.find(s=>s.id===SCOPE)&&branchSystems.length)SCOPE=branchSystems[0].id;
     return SCOPE;
   }
   // Staff/incharge: always locked to their assigned scope
@@ -1849,6 +1878,8 @@ function render(){
   if(CURRENT!=='settings'&&SUPPRESS_REALTIME){
     SUPPRESS_REALTIME=false;
   }
+  // Keep topbar in sync with current branch
+  applyBrand();
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
   // save current page to session so refresh restores it
   try{const s=sessionStorage.getItem('stockline_session');if(s){const d=JSON.parse(s);d.page=CURRENT;sessionStorage.setItem('stockline_session',JSON.stringify(d));}}catch(e){}
@@ -1865,12 +1896,12 @@ function render(){
 function scopeTabs(container,onChange){
   const allSystems=DB.systems||[];
   if(SESSION.role==='staff')return;
-  // Non-boss locked to their own scope — no tabs needed
   if(SESSION.role==='incharge')return;
-  // Boss: find which branch current SCOPE belongs to, show only that branch's systems
-  const currentSys=allSystems.find(s=>s.id===SCOPE)||allSystems[0];
-  const currentBranchId=currentSys?.branchId||'branch_1';
-  const systems=allSystems.filter(s=>s.branchId===currentBranchId);
+  // Boss: locked to systems in BRANCH_TAB only — no cross-branch visibility
+  const branchId=BRANCH_TAB||(allSystems.find(s=>s.id===SCOPE)?.branchId||'branch_1');
+  const systems=allSystems.filter(s=>(s.branchId||'branch_1')===branchId);
+  // Keep SCOPE within this branch
+  if(!systems.find(s=>s.id===SCOPE)&&systems.length)SCOPE=systems[0].id;
   if(systems.length<=1)return;
   const tabs=el('div','scope-tabs');
   systems.forEach(sys=>{
@@ -2052,14 +2083,18 @@ function pageStocks(main){
   // --- sticky bar: scope tabs + summary + sub-tabs + search + add + category pills ---
   const bar=el('div','sticky-bar');
 
-  // scope tabs
-  const stRow=el('div','seg no-filter');stRow.style.marginBottom='8px';
-  (DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>s.id).forEach(sc=>{
-    const b=el('button',scope===sc?'on '+sc:'',scopeLabel(sc));
-    b.onclick=()=>{SCOPE=sc;STOCKS_SUBTAB='stocks';STOCKS_CAT='';buildNav();render();};
-    stRow.appendChild(b);
-  });
-  if(SESSION.role==='boss')bar.appendChild(stRow);
+  // scope tabs — only systems in current branch, hidden if only 1
+  const branchId=BRANCH_TAB||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
+  const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
+  if(SESSION.role==='boss'&&branchSystems.length>1){
+    const stRow=el('div','seg no-filter');stRow.style.marginBottom='8px';
+    branchSystems.forEach(s=>{
+      const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));
+      b.onclick=()=>{SCOPE=s.id;STOCKS_SUBTAB='stocks';STOCKS_CAT='';buildNav();render();};
+      stRow.appendChild(b);
+    });
+    bar.appendChild(stRow);
+  }
 
   // summary card inline (compact)
   const sum=scopeSummaryCard(scope,true);sum.classList.add('no-filter');sum.style.marginBottom='8px';
@@ -2271,7 +2306,7 @@ function storedAtHtml(it){
 
 function itemModal(scope,existing,startUnused){
   // merge categories from both scopes — since items can move between systems
-  const allCats=[...new Set((DB.systems||[{id:'kitchen'},{id:'restaurant'}]).flatMap(s=>DB.categories[s.id]||[]))].sort();
+  const allCats=[...new Set(visibleSystems().flatMap(s=>DB.categories[s.id]||[]))].sort();
   const cats=allCats.length?allCats:(DB.categories[scope]||[]);
   const sups=DB.suppliers.filter(s=>s.scope===scope);
   const d=existing||{name:'',category:cats[0]||'',store:'dry',unit:'kg',qty:0,par:0,supplierId:sups[0]?.id||'',location:'',spot:'',temp:'',expiry:'',isFood:true};
@@ -2553,13 +2588,14 @@ function pageDeliveries(main){
   // sticky bar
   const bar=el('div','sticky-bar');
   scopeTabs(bar,()=>{DELIV_SUBTAB='deliveries';render();});
-  const subs=[{id:'deliveries',label:'Deliveries'},{id:'suppliers',label:'Suppliers'}];
+  const subs=[{id:'deliveries',label:'Deliveries'},{id:'suppliers',label:'Suppliers'},{id:'categories',label:'Categories'}];
   const tabs=el('div','seg no-filter');tabs.style.marginBottom='8px';
   subs.forEach(s=>{const b=el('button',DELIV_SUBTAB===s.id?'on':'',s.label);b.onclick=()=>{DELIV_SUBTAB=s.id;render();};tabs.appendChild(b);});
   bar.appendChild(tabs);
   main.appendChild(bar);
 
   if(DELIV_SUBTAB==='suppliers'){pageSuppliers(main,true);return;}
+  if(DELIV_SUBTAB==='categories'){pageCats(main);return;}
 
   renderAwaitingSection(main,scope);
 
@@ -2887,20 +2923,16 @@ function deliveryModal(scope){
   const body=el('div');
   // Boss sees all systems; incharge/staff locked to their own scope only
   const scopeSeg=el('div','seg');scopeSeg.style.marginBottom='14px';
-  const visibleSystems=SESSION.role==='boss'
-    ?(DB.systems||[])
-    :(DB.systems||[]).filter(s=>s.id===SESSION.scope);
-  // Only show selector if boss has multiple systems
-  if(SESSION.role==='boss'&&visibleSystems.length>1){
-    visibleSystems.forEach(s=>{
+  const visSystems=visibleSystems();
+  if(SESSION.role==='boss'&&visSystems.length>1){
+    visSystems.forEach(s=>{
       const b=el('button',delivScope===s.id?'on '+s.id:'',scopeLabel(s.id));
       b.onclick=()=>{delivScope=s.id;[...scopeSeg.children].forEach(x=>x.className='');b.className='on '+s.id;};
       scopeSeg.appendChild(b);
     });
     body.appendChild(field('Delivering to',scopeSeg));
   }else{
-    // Non-boss: locked to their scope, show as label
-    delivScope=SESSION.role==='boss'?(visibleSystems[0]?.id||scope):SESSION.scope;
+    delivScope=SESSION.role==='boss'?(visSystems[0]?.id||scope):SESSION.scope;
   }
   const items=()=>DB.items.filter(i=>!i.unused); // all items both systems
   const supI=selectEl([{label:'— direct / other —',value:''},...sups.map(s=>({label:s.name,value:s.id}))]);
@@ -3291,7 +3323,7 @@ function pageUsage(main){
   main.appendChild(c);
 }
 function usageModal(scope){
-  const allItems=(DB.systems||[{id:'kitchen'},{id:'restaurant'}]).flatMap(s=>activeItems(s.id));
+  const allItems=visibleSystems().flatMap(s=>activeItems(s.id));
   if(!allItems.length){toast('Add stock items first');return;}
 
   let selectedItem=null;
@@ -3302,12 +3334,13 @@ function usageModal(scope){
 
   // ---- scope chips ----
   const scopeRow=el('div','seg');scopeRow.style.marginBottom='10px';
-  [['all','All'],...(DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>[s.id,scopeLabel(s.id)])].forEach(([v,l])=>{
+  const usageSystems=visibleSystems();
+  [['all','All'],...usageSystems.map(s=>[s.id,scopeLabel(s.id)])].forEach(([v,l])=>{
     const b=el('button',scopeFilter===v?'on':'',l);
     b.onclick=()=>{scopeFilter=v;filterList();paintScopeBtns()};
     scopeRow.appendChild(b);
   });
-  function paintScopeBtns(){const ids=['all',...(DB.systems||[]).map(s=>s.id)];[...scopeRow.children].forEach((b,i)=>{b.className=scopeFilter===ids[i]?'on ':''});};
+  function paintScopeBtns(){const ids=['all',...usageSystems.map(s=>s.id)];[...scopeRow.children].forEach((b,i)=>{b.className=scopeFilter===ids[i]?'on ':''});};
   body.appendChild(scopeRow);
 
   // ---- search ----
@@ -3327,7 +3360,7 @@ function usageModal(scope){
   function filterList(){
     listWrap.innerHTML='';
     const q=searchQ.toLowerCase().trim();
-    const scopes=scopeFilter==='all'?(DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>s.id):[scopeFilter];
+    const scopes=scopeFilter==='all'?usageSystems.map(s=>s.id):[scopeFilter];
     const visible=allItems.filter(i=>{
       if(!scopes.includes(i.scope))return false;
       if(q&&!i.name.toLowerCase().includes(q)&&!i.category.toLowerCase().includes(q))return false;
@@ -3592,7 +3625,7 @@ function announceModal(existing){
   const titleI=input(existing?existing.title:'','Title (optional)');
   const bodyI=el('textarea');bodyI.rows=5;bodyI.placeholder='Write your announcement…';bodyI.value=existing?existing.body:'';
   bodyI.style.cssText='width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;resize:vertical;box-sizing:border-box;';
-  const scopeOpts=[{label:'Everyone',value:'all'},...(DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>({label:scopeLabel(s.id),value:s.id}))];
+  const scopeOpts=[{label:'Everyone',value:'all'},...visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id}))];
   const scopeI=canPostAll?selectEl(scopeOpts,existing?existing.scope:'all'):null;
   body.appendChild(field('Title (optional)',titleI));
   body.appendChild(field('Message',bodyI));
@@ -3881,7 +3914,7 @@ function pageCats(main){
   main.appendChild(headEl(eyebrow,'Categories',sub));
 
   // build sub-tabs — boss sees both systems, in-charge sees only their own
-  const scopes=isBoss?(DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>s.id):[SESSION.scope];
+  const scopes=visibleSystems().map(s=>s.id);
   // ensure CATS_TAB is valid for this role
   if(!scopes.includes(CATS_TAB))CATS_TAB=scopes[0];
 
@@ -4059,7 +4092,7 @@ function changeRoleModal(u){
   const body=el('div');
   body.innerHTML=`<div class="suptag" style="margin-bottom:12px">Changing role for <b>${esc(u.name)}</b> (@${esc(u.username)})</div>`;
   const roleI=selectEl([{label:'Staff — can view, log deliveries and usage',value:'staff'},{label:'In-charge — can manage stock, categories and suppliers',value:'incharge'}],u.role||'staff');
-  const scopeI=selectEl((DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||(DB.systems||[])[0]?.id||'kitchen');
+  const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||visibleSystems()[0]?.id||'kitchen');
   body.appendChild(field('Role',roleI));
   body.appendChild(field('System',scopeI));
   const err=el('div','err');body.appendChild(err);
@@ -4082,7 +4115,7 @@ function pageSettings(main){
   main.appendChild(headEl(isBoss?'Owner controls':'Account','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
 
   const allTabs=[
-    {id:'systems',label:'Branches name',roles:['boss']},
+    {id:'systems',label:'Branches name',roles:['boss','incharge']},
     {id:'account',label:'Account',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
   ].filter(t=>t.roles.includes(SESSION.role));
@@ -4097,7 +4130,7 @@ function pageSettings(main){
   });
   main.appendChild(tabRow);
 
-  if(SETTINGS_TAB==='systems'&&isBoss)settingsSystems(main);
+  if(SETTINGS_TAB==='systems'&&(isBoss||isIncharge))settingsSystems(main);
   else if(SETTINGS_TAB==='data')settingsData(main);
   else settingsAccount(main);
 }
@@ -4183,7 +4216,7 @@ function settingsTeam(main){
       const approve=el('button','btn brass tiny','Approve');
       approve.onclick=()=>{
         const roleI=selectEl([{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}],'staff');
-        const scopeI=selectEl((DB.systems||[]).map(s=>({label:scopeLabel(s.id),value:s.id})),(DB.systems||[])[0]?.id||'kitchen');
+        const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' ('+( u.email||u.username)+') wants to join.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
@@ -4243,7 +4276,7 @@ function settingsTeam(main){
       editForm.appendChild(field('Password',pw,'Leave blank to keep current password.'));
       if(u.role!=='boss'){
         const roleI=selectEl([{label:'Staff \u2014 can view, log deliveries and usage',value:'staff'},{label:'In-charge \u2014 can manage stock, categories and suppliers',value:'incharge'}],u.role||'staff');
-        const scopeI=selectEl((DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||(DB.systems||[])[0]?.id||'kitchen');
+        const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||visibleSystems()[0]?.id||'kitchen');
         editForm.appendChild(field('Role',roleI));
         editForm.appendChild(field('System',scopeI));
         const saveBtn=el('button','btn brass sm','Save');saveBtn.style.marginTop='8px';
@@ -4331,6 +4364,7 @@ function settingsAppearance(main){
 /* ---- System names ---- */
 function settingsSystems(main){
   const isBoss=SESSION.role==='boss';
+  const isIncharge=SESSION.role==='incharge';
   const systems=DB.systems||[];
   // Ensure branch_1 always exists (migration handles this on load, safety net here)
   if(!DB.branches)DB.branches=[];
@@ -4339,7 +4373,9 @@ function settingsSystems(main){
     DB.branches.unshift({id:'branch_1',label:mn,short:(mn.slice(0,3)||'MAI').toUpperCase()});
   }
   if(systems)systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
-  const branches=DB.branches;
+  // In-charge only sees their own branch
+  const inchargeBranchId=isIncharge?(SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1'):null;
+  const branches=isBoss?DB.branches:(DB.branches||[]).filter(b=>b.id===inchargeBranchId);
 
   // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
   if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
@@ -4786,7 +4822,7 @@ function checkCutoffs(){
   // End-of-day check: if it's after 9pm and items are still marked as ordered
   // (staff never pressed "Didn't arrive"), notify the in-charge
   if(hm>=21*60){
-    (DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>s.id).forEach(scope=>{
+    visibleSystems().map(s=>s.id).forEach(scope=>{
       const unconfirmed=activeItems(scope).filter(i=>i.ordered&&i.orderedOn&&i.orderedOn<new Date().setHours(0,0,0,0));
       if(unconfirmed.length){
         const key='eod_awaiting_'+scope+todayISO();
@@ -4799,7 +4835,7 @@ function checkCutoffs(){
     });
   }
   // Expired items: notify in-charge if any active item is past its expiry date
-  (DB.systems||[{id:'kitchen'},{id:'restaurant'}]).map(s=>s.id).forEach(scope=>{
+  visibleSystems().map(s=>s.id).forEach(scope=>{
     const expired=activeItems(scope).filter(i=>i.expiry&&i.qty>0&&daysUntil(i.expiry)<0);
     if(expired.length){
       const key='expired_'+scope+todayISO();
