@@ -995,26 +995,49 @@ function showRegister(){
   if(btn)btn.textContent='Continue';
 
   loadSupabaseSDK().then(async()=>{
-    const allEsts=[];
+    const allBranches=[]; // {estId, branchId, label, systemIds}
     if(USE_SUPABASE&&window.supabase){
       try{
         const anonClient=getAnonClient();
-        const{data,error}=await anonClient.from('establishments').select('id,name');
+        // Fetch establishment data to get branches
+        const resp=await anonClient.from('establishments').select('id,name,data');
+        const data=resp.data;
+        const error=resp.error;
         if(error)console.warn('Branch fetch error:',error.message);
-        if(data&&data.length)data.forEach(e=>{if(e.name)allEsts.push({id:e.id,name:e.name});});
-      }catch(e){console.warn('Branch fetch failed:',e);}
+        if(data&&data.length){
+          data.forEach(e=>{
+            try{
+              const d=e.data||{};
+              const bs=d.branches||[];
+              const ss=d.systems||[];
+              if(bs.length){
+                bs.forEach(b=>{
+                  const sysIds=ss.filter(s=>s.branchId===b.id).map(s=>s.id);
+                  allBranches.push({estId:e.id,branchId:b.id,label:b.label,systemIds:sysIds});
+                });
+              }else{
+                allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Main',systemIds:ss.map(s=>s.id)});
+              }
+            }catch(err){
+              // fallback if data field has issues
+              allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Branch',systemIds:[]});
+            }
+          });
+        }
+      }catch(e){console.warn('Branch fetch failed:',e.message||e);}
     }
     // Also check localStorage
     const defaultDb=loadEst('default');
-    if(defaultDb){
-      const name=defaultDb.venue?.name||defaultDb.brand?.appName;
-      if(name&&!allEsts.find(e=>e.id==='default'))allEsts.push({id:'default',name});
+    if(defaultDb&&defaultDb.branches){
+      defaultDb.branches.forEach(b=>{
+        if(!allBranches.find(x=>x.estId==='default'&&x.branchId===b.id)){
+          const sysIds=(defaultDb.systems||[]).filter(s=>s.branchId===b.id).map(s=>s.id);
+          allBranches.push({estId:'default',branchId:b.id,label:b.label,systemIds:sysIds});
+        }
+      });
     }
-    getEstablishments().forEach(e=>{
-      if(e.name&&!allEsts.find(x=>x.id===e.id))allEsts.push(e);
-    });
 
-    const hasOwner=allEsts.length>0;
+    const hasOwner=allBranches.length>0;
     if(estF)estF.style.display=hasOwner?'none':'block';
     if(estCF)estCF.style.display=hasOwner?'block':'none';
     if(sub)sub.textContent=hasOwner?'Select your branch to request access.':'Create your owner account to get started.';
@@ -1022,9 +1045,10 @@ function showRegister(){
 
     if(sel&&hasOwner){
       sel.innerHTML='<option value="">Select branch\u2026</option>';
-      allEsts.forEach(e=>{
+      allBranches.forEach(b=>{
         const opt=document.createElement('option');
-        opt.value=e.id;opt.textContent=e.name;
+        opt.value=JSON.stringify({estId:b.estId,branchId:b.branchId,systemIds:b.systemIds});
+        opt.textContent=b.label;
         sel.appendChild(opt);
       });
     }
@@ -1074,15 +1098,18 @@ async function doRegister(){
     finalizeLogin();
     toast('Welcome '+name+'! You are the owner of '+est+'.','good');
   }else{
-    // Branch exists — validate join code
+    // Branch exists — user joining a specific branch
     const sel=$('#regEstCode');
-    const selectedEstId=sel?sel.value:'';
-    if(!selectedEstId){$('#regMsg').textContent='Select a branch.';$('#regBtn').disabled=false;return;}
-    // Load the selected branch's data
+    const selVal=sel?sel.value:'';
+    if(!selVal){$('#regMsg').textContent='Select a branch.';$('#regBtn').disabled=false;return;}
+    let selData={estId:'default',branchId:'branch_1',systemIds:[]};
+    try{selData=JSON.parse(selVal);}catch(e){selData={estId:selVal,branchId:'branch_1',systemIds:[]};}
+    const selectedEstId=selData.estId||selVal;
+    const selectedBranchId=selData.branchId||'branch_1';
     const estDb=loadEst(selectedEstId);
     if(!estDb){$('#regMsg').textContent='Could not load branch data.';$('#regBtn').disabled=false;return;}
-    // Add pending user to that branch
-    const newUser={id:uid(),name,username:email,pass,role:'staff',email,scope:(estDb.systems||[])[0]?.id||'kitchen',pending:true,pendingAt:now()};
+    const firstScope=(selData.systemIds&&selData.systemIds[0])||(estDb.systems||[]).find(s=>s.branchId===selectedBranchId)?.id||(estDb.systems||[])[0]?.id||'kitchen';
+    const newUser={id:uid(),name,username:email,pass,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
     estDb.users=estDb.users||[];
     estDb.users.push(newUser);
     // Notify
@@ -1093,6 +1120,12 @@ async function doRegister(){
       estDb.notifications.push({id:uid(),scope:sc,text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
     });
     saveEst(selectedEstId,estDb);
+    // Also push to Supabase if available
+    if(USE_SUPABASE&&SUPABASE_USER){
+      const tmpDB=DB;DB=estDb;ACTIVE_EST_ID=selectedEstId;
+      sbSave().catch(e=>console.warn('Supabase save failed:',e));
+      DB=tmpDB;ACTIVE_EST_ID='default';
+    }
     $('#register').style.display='none';$('#regBtn').disabled=false;
     $('#auth').style.display='flex';
     $('#authMsg').textContent='';
