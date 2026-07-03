@@ -2468,10 +2468,10 @@ function wastageModal(it,scope){
   foot.appendChild(cancel);foot.appendChild(save_);
   openModal('Log wastage \u2014 '+esc(it.name),body,foot);
 }
-function confirmModal(title,msg,onYes){
+function confirmModal(title,msg,onYes,onNo){
   const body=el('div');body.innerHTML=`<p class="suptag" style="font-size:14px">${esc(msg)}</p>`;
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
-  const no=el('button','btn ghost','Cancel');no.onclick=closeModal;no.style.flex='1';
+  const no=el('button','btn ghost','Cancel');no.onclick=()=>{closeModal();if(onNo)onNo();};no.style.flex='1';
   const yes=el('button','btn danger','Confirm');yes.style.flex='1';
   yes.onclick=()=>{closeModal();onYes();};
   foot.appendChild(no);foot.appendChild(yes);openModal(title,body,foot);
@@ -4352,11 +4352,12 @@ function settingsSystems(main){
     const delBranch=el('button','btn ghost tiny','Delete branch');
     delBranch.style.color='var(--bad)';
     delBranch.onclick=(e)=>{
-      toast('Delete clicked','good');
       e.stopPropagation();
       e.preventDefault();
       const currentBranches=DB.branches||[];
       if(currentBranches.length<=1){toast('Cannot delete the only branch','bad');return;}
+      // Temporarily pause realtime to prevent re-render during modal
+      unsubscribeRealtime();
       setTimeout(()=>{
         confirmModal(
           'Delete "'+_blabel+'"?',
@@ -4377,10 +4378,13 @@ function settingsSystems(main){
             DB.branches=currentBranches.filter(b=>b.id!==_bid);
             if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
             BRANCH_TAB=DB.branches[0]?.id||null;
-            save();buildNav();render();toast(_blabel+' deleted','good');
-          }
+            save();
+            subscribeRealtime();
+            buildNav();render();toast(_blabel+' deleted','good');
+          },
+          ()=>{subscribeRealtime();} // re-subscribe on cancel too
         );
-      },10);
+      },50);
     };
     ra.appendChild(delBranch);
     hdr.appendChild(ra);
