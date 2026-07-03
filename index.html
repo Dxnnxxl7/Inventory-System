@@ -4273,7 +4273,14 @@ function settingsAppearance(main){
 function settingsSystems(main){
   const isBoss=SESSION.role==='boss';
   const systems=DB.systems||[];
-  const branches=(DB.branches&&DB.branches.length)?DB.branches:(()=>{const mn=DB.venue?.name||DB.brand?.appName||'Main Branch';DB.branches=[{id:'branch_1',label:mn,short:mn.slice(0,3).toUpperCase()}];DB.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});save();return DB.branches;})();
+  if(!DB.branches||!DB.branches.length){
+    const mn=DB.venue?.name||DB.brand?.appName||'Main';
+    DB.branches=[{id:'branch_1',label:mn,short:mn.slice(0,3).toUpperCase()}];
+    if(DB.systems)DB.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
+    // don't save() here — would trigger realtime loop
+    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+  }
+  const branches=DB.branches;
 
   // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
   if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
