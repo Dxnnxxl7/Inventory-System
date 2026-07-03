@@ -553,7 +553,8 @@ function loadSupabaseSDK(){
   });
 }
 let SUPABASE_USER=null; // authenticated Supabase user (boss only)
-let _realtimeSub=null;  // active realtime subscription // increment when DB structure changes incompatibly
+let _realtimeSub=null;
+let SUPPRESS_REALTIME=false; // set true during deletes to prevent re-render
 const DB_KEY='stockline_db_v1'; // default establishment
 const EST_REGISTRY='stockline_establishments'; // list of all establishments
 let ACTIVE_EST_ID='default'; // currently active branch id
@@ -762,7 +763,8 @@ function subscribeRealtime(){
       // another device saved — reload if data is newer
       if(payload.new&&payload.new.data){
         const remote=payload.new.data;
-        // only apply if remote is newer (simple version: always apply)
+        if(SUPPRESS_REALTIME)return;
+        if($('#modalScrim').classList.contains('show'))return;
         DB=migrateLegacy(remote);
         localStorage.setItem(currentDbKey(),JSON.stringify(DB));
         if(SESSION)render();
@@ -4356,7 +4358,7 @@ function settingsSystems(main){
       e.preventDefault();
       const currentBranches=DB.branches||[];
       if(currentBranches.length<=1){toast('Cannot delete the only branch','bad');return;}
-      // Temporarily pause realtime to prevent re-render during modal
+      SUPPRESS_REALTIME=true;
       unsubscribeRealtime();
       setTimeout(()=>{
         confirmModal(
@@ -4379,10 +4381,10 @@ function settingsSystems(main){
             if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
             BRANCH_TAB=DB.branches[0]?.id||null;
             save();
-            subscribeRealtime();
+            setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},2000);
             buildNav();render();toast(_blabel+' deleted','good');
           },
-          ()=>{subscribeRealtime();} // re-subscribe on cancel too
+          ()=>{SUPPRESS_REALTIME=false;subscribeRealtime();}
         );
       },50);
     };
