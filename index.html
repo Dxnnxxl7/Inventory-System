@@ -54,7 +54,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .land-brand{display:flex;align-items:center;gap:12px;min-width:0}
 .land-logo{width:44px;height:38px;flex:none}
 .land-brand b{display:block;font-size:22px;line-height:1}
-.land-brand span{font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.land-brand span{display:block;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:11px;letter-spacing:.03em;color:var(--muted);white-space:normal;line-height:1.25;max-width:260px}
 .land-actions{display:flex;align-items:center;gap:10px;flex:none}
 .land-hero{
   min-height:calc(100vh - 74px);display:grid;grid-template-columns:minmax(0,.9fr) minmax(320px,1.1fr);
@@ -100,6 +100,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 @media(max-width:520px){
   .land-top{padding:12px 14px}
   .land-brand b{font-size:19px}
+  .land-brand span{font-size:10px;max-width:160px}
   .land-actions .btn.ghost{display:none}
   .land-hero{padding:28px 14px 24px;gap:24px}
   .land-copy h1{font-size:44px}
@@ -498,7 +499,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   <header class="land-top">
     <div class="land-brand">
       <svg class="land-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 180" aria-hidden="true"><line x1="28" y1="140" x2="28" y2="155" stroke="#a03030" stroke-width="28" stroke-linecap="round"/><line x1="82" y1="96" x2="82" y2="155" stroke="#c0612b" stroke-width="28" stroke-linecap="round"/><line x1="136" y1="58" x2="136" y2="155" stroke="#d4a017" stroke-width="28" stroke-linecap="round"/><line x1="190" y1="18" x2="190" y2="155" stroke="#4a7c59" stroke-width="28" stroke-linecap="round"/><text x="203" y="22" font-family="Georgia,serif" font-size="28" fill="#4a7c59">°</text></svg>
-      <div><b>Stored</b><span>usestored.app</span></div>
+      <div><b>Stored</b><span>Know what you have, before you need it.</span></div>
     </div>
     <div class="land-actions">
       <button class="btn ghost sm" type="button" onclick="showLogin()">Sign in</button>
@@ -522,7 +523,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div class="product-shot" aria-hidden="true">
       <div class="shot-bar">
         <div class="shot-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 180" aria-hidden="true"><line x1="28" y1="140" x2="28" y2="155" stroke="#a03030" stroke-width="28" stroke-linecap="round"/><line x1="82" y1="96" x2="82" y2="155" stroke="#c0612b" stroke-width="28" stroke-linecap="round"/><line x1="136" y1="58" x2="136" y2="155" stroke="#d4a017" stroke-width="28" stroke-linecap="round"/><line x1="190" y1="18" x2="190" y2="155" stroke="#4a7c59" stroke-width="28" stroke-linecap="round"/><text x="203" y="22" font-family="Georgia,serif" font-size="28" fill="#4a7c59">°</text></svg></div>
-        <div class="shot-title"><b>Stored</b><div>usestored.app</div></div>
+        <div class="shot-title"><b>Stored</b><div>Know what you have, before you need it.</div></div>
       </div>
       <div class="shot-tabs"><span>Stocks</span><span>Deliveries</span><span>Need to order</span><span>Temps</span></div>
       <div class="shot-card">
