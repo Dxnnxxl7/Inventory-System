@@ -1023,6 +1023,44 @@ let DELIV_CAT_FILTER=''; // active category filter on Deliveries page ('' = all)
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+function saveSessionState(){
+  if(!SESSION)return;
+  try{
+    const old=JSON.parse(sessionStorage.getItem('stockline_session')||localStorage.getItem('stockline_session')||'{}');
+    const data=JSON.stringify({
+      ...old,
+      id:SESSION.id,
+      estId:ACTIVE_EST_ID,
+      page:CURRENT,
+      branchId:BRANCH_TAB,
+      scope:SCOPE,
+      histTab:HIST_TAB,
+      delivSubtab:DELIV_SUBTAB,
+      orderSubtab:ORDER_SUBTAB,
+      stocksSubtab:STOCKS_SUBTAB,
+      stocksCat:STOCKS_CAT,
+      settingsTab:SETTINGS_TAB,
+      catsTab:CATS_TAB,
+      delivCatFilter:DELIV_CAT_FILTER
+    });
+    sessionStorage.setItem('stockline_session',data);
+    localStorage.setItem('stockline_session',data);
+  }catch(e){}
+}
+function applySavedSessionState(saved){
+  if(!saved)return;
+  CURRENT=saved.page||CURRENT||'stocks';
+  if(saved.branchId)BRANCH_TAB=saved.branchId;
+  if(saved.scope)SCOPE=saved.scope;
+  if(saved.histTab)HIST_TAB=saved.histTab;
+  if(saved.delivSubtab)DELIV_SUBTAB=saved.delivSubtab;
+  if(saved.orderSubtab)ORDER_SUBTAB=saved.orderSubtab;
+  if(saved.stocksSubtab)STOCKS_SUBTAB=saved.stocksSubtab;
+  if(typeof saved.stocksCat==='string')STOCKS_CAT=saved.stocksCat;
+  if(saved.settingsTab)SETTINGS_TAB=saved.settingsTab;
+  if(saved.catsTab)CATS_TAB=saved.catsTab;
+  if(typeof saved.delivCatFilter==='string')DELIV_CAT_FILTER=saved.delivCatFilter;
+}
 function fmtDate(ts){
   if(!ts&&ts!==0)return'—';
   let d;
@@ -1747,13 +1785,11 @@ function finalizeLogin(){
     const userBranchId=SESSION.branchId||(systems.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
     BRANCH_TAB=userBranchId;
   }
-  // persist session
-  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT}));}catch(e){}
   applyBrand();
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';$('#app').style.display='block';
   if(SESSION.role==='boss')subscribeRealtime();
-  CURRENT='stocks';buildNav();renderBell();render();
+  CURRENT='stocks';saveSessionState();buildNav();renderBell();render();
   checkCutoffs();
   showLoginGreeting();
 }
@@ -1825,7 +1861,7 @@ function doLogin(){
 }
 function logout(){
   SESSION=null;
-  try{sessionStorage.removeItem('stockline_session');}catch(e){}
+  try{sessionStorage.removeItem('stockline_session');localStorage.removeItem('stockline_session');}catch(e){}
   unsubscribeRealtime();
   $('#app').style.display='none';
   $('#register').style.display='none';
@@ -1873,25 +1909,35 @@ applyBrand();renderQuickRoles();
 // Restore session after page refresh
 (()=>{
   try{
-    const saved=sessionStorage.getItem('stockline_session');
+    const saved=sessionStorage.getItem('stockline_session')||localStorage.getItem('stockline_session');
     if(saved){
-      const{id,estId,page}=JSON.parse(saved);
+      const sess=JSON.parse(saved);
+      const{id,estId}=sess;
       if(estId&&estId!==ACTIVE_EST_ID){ACTIVE_EST_ID=estId;DB=load();}
       const user=DB.users.find(x=>x.id===id);
       if(user){
         SESSION=user;
         const systems=DB.systems||[];
         SCOPE=user.role==='boss'?(systems[0]?.id||'kitchen'):(user.scope||'kitchen');
+        applySavedSessionState(sess);
         applyBrand();
+        const land=$('#landing');if(land)land.style.display='none';
+        $('#register').style.display='none';
+        const fp=$('#forgotPassword');if(fp)fp.style.display='none';
         $('#auth').style.display='none';$('#app').style.display='block';
         if(user.role==='boss')subscribeRealtime();
-        CURRENT=page||'stocks';
         buildNav();renderBell();
         setTimeout(()=>render(),50);
         checkCutoffs();
+      }else{
+        sessionStorage.removeItem('stockline_session');
+        localStorage.removeItem('stockline_session');
+        showLogin(false);
       }
     }
-  }catch(e){}
+  }catch(e){
+    try{sessionStorage.removeItem('stockline_session');localStorage.removeItem('stockline_session');}catch(_){}
+  }
 })();
 
 /* ---------- NAV ---------- */
@@ -1972,7 +2018,7 @@ function switchBranchInPlace(branchId){
   CURRENT='stocks';
   STOCKS_SUBTAB='stocks';
   STOCKS_CAT='';
-  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT,branchId:BRANCH_TAB,scope:SCOPE}));}catch(e){}
+  saveSessionState();
   buildNav();
   renderBell();
   render();
@@ -2270,8 +2316,7 @@ function render(){
   // Keep topbar in sync with current branch
   applyBrand();
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
-  // save current page to session so refresh restores it
-  try{const s=sessionStorage.getItem('stockline_session');if(s){const d=JSON.parse(s);d.page=CURRENT;sessionStorage.setItem('stockline_session',JSON.stringify(d));}}catch(e){}
+  saveSessionState();
   const routes={
     stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,
     usage:pageUsage,temps:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
