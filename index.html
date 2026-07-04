@@ -1750,6 +1750,7 @@ function branchSwitchModal(){
   if(!SESSION||SESSION.role!=='boss')return;
   const branches=DB.branches||[];
   if(branches.length<=1){toast('Only one branch available');return;}
+  closeNav();
   const body=el('div');
   const active=currentBranch();
   branches.forEach(branch=>{
@@ -1806,7 +1807,7 @@ function buildNav(){
     if((DB.branches||[]).length>1){
       const switchBtn=el('button','btn ghost sm','Switch branch');
       switchBtn.style.cssText='width:100%;margin-bottom:8px';
-      switchBtn.onclick=()=>{closeNav();setTimeout(branchSwitchModal,0);};
+      switchBtn.onclick=(e)=>{e.preventDefault();e.stopPropagation();branchSwitchModal();};
       foot.appendChild(switchBtn);
     }
     const currentBranch=(DB.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB.branches||[])[0];
@@ -4588,8 +4589,6 @@ function settingsAppearance(main){
   const estLabel=ACTIVE_EST_ID!=='default'?(getEstablishments().find(e=>e.id===ACTIVE_EST_ID)?.name||DB.venue?.name||''):(DB.venue?.name||'');
   const subtitle=estLabel?`Customise appearance for "${estLabel}".`:'Customise the look of this branch.';
   const b=DB.brand;const c=el('div','card pad');
-  const appNameI=input(b.appName,'App name');
-  c.appendChild(field('App / brand name',appNameI));
   // logo
   const lf=el('div','field');lf.appendChild(el('label',null,'Logo or picture'));
   const lrow=el('div');lrow.style.display='flex';lrow.style.gap='14px';lrow.style.alignItems='center';
