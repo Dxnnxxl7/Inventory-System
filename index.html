@@ -401,7 +401,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .cols-3{grid-template-columns:1fr 1fr}
   .main{padding:14px;max-width:100%}
   .layout{display:block}
-  .sidebar{position:fixed;top:61px;bottom:0;left:0;z-index:28;transform:translateX(-100%);box-shadow:6px 0 30px rgba(0,0,0,.12);max-width:82vw}
+  .sidebar{position:fixed;top:61px;bottom:0;left:0;z-index:28;width:min(320px,calc(100vw - 28px));max-width:none;height:auto;transform:translateX(-100%);box-shadow:6px 0 30px rgba(0,0,0,.12)}
   .sidebar.open{transform:translateX(0)}
   .scrim.show{display:block}
   .page-head h2{font-size:20px}
@@ -495,6 +495,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .card.pad{padding:10px}
   .page-head h2{font-size:17px}
   table{font-size:12px}
+  .sidebar{width:calc(100vw - 18px)}
 }
 
 /* Large desktop — wider content area */
@@ -1728,6 +1729,11 @@ function finalizeLogin(){
   checkCutoffs();
   showLoginGreeting();
 }
+function userMatchesLogin(user,login){
+  const username=String(user?.username||'').toLowerCase();
+  const email=String(user?.email||'').toLowerCase();
+  return username===login||email===login;
+}
 function doLogin(){
   $('#authMsg').textContent='';
   const input_=$('#loginEmail').value.trim();
@@ -1736,10 +1742,7 @@ function doLogin(){
   const isEmail=input_.includes('@');
   // Username/email → local auth (staff / incharge / owner fallback)
   const inputLower=input_.toLowerCase();
-  const localUser=DB.users.find(x=>
-    x.username.toLowerCase()===inputLower||
-    (x.email&&x.email.toLowerCase()===inputLower)
-  );
+  const localUser=DB.users.find(x=>userMatchesLogin(x,inputLower));
   if(localUser&&localUser.role!=='boss'){
     if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
@@ -1752,7 +1755,7 @@ function doLogin(){
       sbSignIn(input_,pass).then(async({data,error})=>{
         if(error){
           // Supabase failed — try local match by email
-          const local=DB.users.find(x=>x.email&&x.email.toLowerCase()===input_.toLowerCase());
+          const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
           if(local&&local.pass===pass){
             if(local.pending){$('#authMsg').textContent='Your account is waiting for approval.';return;}
             SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;
@@ -1785,7 +1788,7 @@ function doLogin(){
   }
   // Username/email → local auth (staff / incharge / owner fallback)
   const u=input_.toLowerCase();
-  const user=DB.users.find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u));
+  const user=DB.users.find(x=>userMatchesLogin(x,u));
   if(!user||user.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
   SESSION=user;
@@ -1799,10 +1802,11 @@ function logout(){
   $('#app').style.display='none';
   $('#register').style.display='none';
   $('#forgotPassword').style.display='none';
-  $('#auth').style.display='none';
-  const land=$('#landing');if(land)land.style.display='block';
   $('#loginPass').value='';
   $('#loginEmail').value='';
+  showLogin(false);
+  replacePublicState('login');
+  renderQuickRoles();
 }
 
 function showLoginGreeting(){
@@ -4346,7 +4350,7 @@ function pageTemps(main){
         else tr.innerHTML+='<td style="color:var(--muted)">—</td>';
       });
       tr.innerHTML+=`<td class="suptag">${esc(l.byName||'')}</td><td class="suptag">${esc(l.note||'')}</td>`;
-      if(isBoss||isIncharge){
+      if(isBoss||(isIncharge&&u.role==='staff')){
         const delTd=el('td');const delBtn=el('button','btn ghost tiny','Del');
         delBtn.onclick=()=>{DB.tempLogs=DB.tempLogs.filter(x=>x.id!==l.id);save();render();};
         delTd.appendChild(delBtn);tr.appendChild(delTd);
@@ -4524,12 +4528,58 @@ function addUserModal(defaultBranchId){
     const scope=sysI?sysI.value:(systems[0]?.id||'kitchen');
     if(!name){err.textContent='Enter the person’s name.';return;}
     if(!username){err.textContent='Enter a username.';return;}
-    if(DB.users.some(u=>u.username.toLowerCase()===username)){err.textContent='That username is already taken.';return;}
+    if(DB.users.some(u=>String(u.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
     if(pass.length<4){err.textContent='Password needs at least 4 characters.';return;}
     DB.users.push({id:uid(),name,username,pass,role:SESSION.role==='boss'?roleI.value:'staff',scope,branchId:branchI.value||defBranch});
     save();renderQuickRoles();closeModal();render();toast(name+' added','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Add staff member',body,f);
+}
+function editStaffModal(u,defaultBranchId){
+  const body=el('div');
+  const nameI=input(u.name||'','Full name');
+  const userI=input(u.username||'','Username');
+  const passI=input('','New password (leave blank to keep)');passI.type='password';
+  const passWrap=peekWrap(passI);
+  const systems=DB.systems||[];
+  const userBranchId=u.branchId||(systems.find(s=>s.id===u.scope)?.branchId)||defaultBranchId||'branch_1';
+  const branches=SESSION.role==='boss'?(DB.branches||[{id:'branch_1',label:'Main Branch'}]):(DB.branches||[]).filter(b=>b.id===(SESSION.branchId||userBranchId));
+  const branchI=selectEl(branches.map(b=>({label:b.label,value:b.id})),userBranchId);
+  const roleOptions=SESSION.role==='boss'?[{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}]:[{label:'Staff',value:'staff'}];
+  const roleI=selectEl(roleOptions,u.role||'staff');
+  const sysWrap=el('div');
+  function buildSysSelect(branchId){
+    sysWrap.innerHTML='';
+    const brSystems=systems.filter(s=>(s.branchId||'branch_1')===branchId);
+    const opts=SESSION.role==='boss'?(brSystems.length?brSystems:systems):brSystems.filter(s=>s.id===SESSION.scope);
+    const sysI=selectEl(opts.map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||opts[0]?.id||'');
+    sysWrap.appendChild(sysI);
+  }
+  buildSysSelect(userBranchId);
+  branchI.onchange=()=>buildSysSelect(branchI.value);
+  body.appendChild(field('Full name',nameI));
+  body.appendChild(field('Username',userI,'Used to log in. No spaces.'));
+  body.appendChild(field('Password',passWrap));
+  body.appendChild(field('Role',roleI));
+  if(SESSION.role==='boss')body.appendChild(field('Branch',branchI));
+  body.appendChild(field('System',sysWrap));
+  const err=el('div','err');body.appendChild(err);
+  const f=el('div');f.style.display='flex';f.style.gap='10px';f.style.width='100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
+  const ok=el('button','btn brass','Save staff');ok.style.flex='2';
+  ok.onclick=()=>{
+    const name=nameI.value.trim();
+    const username=userI.value.trim().toLowerCase().replace(/\s+/g,'');
+    const sysI=sysWrap.querySelector('select');
+    if(!name){err.textContent='Enter the person’s name.';return;}
+    if(!username){err.textContent='Enter a username.';return;}
+    if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
+    if(passI.value&&passI.value.length<4){err.textContent='Password needs at least 4 characters.';return;}
+    u.name=name;u.username=username;u.role=roleI.value;u.scope=sysI?sysI.value:u.scope;u.branchId=branchI.value||defaultBranchId||u.branchId;
+    if(passI.value)u.pass=passI.value;
+    save();renderQuickRoles();closeModal();render();toast('Staff updated','good');
+  };
+  f.appendChild(cancel);f.appendChild(ok);openModal('Edit staff member',body,f);
 }
 function changePassModal(u){
   const body=el('div');
@@ -4738,8 +4788,10 @@ function settingsTeam(main){
         saveBtn.onclick=()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
-          if(DB.users.some(x=>x.id!==u.id&&x.username.toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
+          if(passI.value.trim())u.pass=passI.value.trim();
+          u.role=roleI.value;u.scope=scopeI.value;
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
         editForm.appendChild(saveBtn);
@@ -4748,7 +4800,7 @@ function settingsTeam(main){
         saveBtn.onclick=()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
-          if(DB.users.some(x=>x.id!==u.id&&x.username.toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
           if(passI.value.trim())u.pass=passI.value.trim();
           save();renderQuickRoles();rTeam();toast('Saved','good');
@@ -5060,11 +5112,16 @@ function settingsSystems(main){
       const row=el('div','flex-between');row.style.cssText='padding:8px 0;border-bottom:1px solid var(--line)';
       const sys=DB.systems.find(s=>s.id===u.scope);
       row.innerHTML='<div><b>'+esc(u.name)+'</b> <span class="chip" style="font-size:11px">'+esc(u.role==='incharge'?'In-charge':'Staff')+'</span><div class="suptag">@'+esc(u.username)+' &middot; '+(sys?esc(sys.label):'—')+'</div></div>';
-      if(isBoss){
+      if(isBoss||isIncharge){
         const ra=el('div','row-actions');
-        const rm=el('button','btn ghost tiny','Remove');
-        rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',()=>{DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
-        ra.appendChild(rm);
+        const ed=el('button','btn ghost tiny','Edit');
+        ed.onclick=()=>editStaffModal(u,branch.id);
+        ra.appendChild(ed);
+        if(isBoss){
+          const rm=el('button','btn ghost tiny','Remove');
+          rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',()=>{DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
+          ra.appendChild(rm);
+        }
         row.appendChild(ra);
       }
       teamDiv.appendChild(row);
