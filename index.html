@@ -737,13 +737,72 @@ function load(){
 function currentDbKey(){return estDbKey(ACTIVE_EST_ID);}
 
 // ── SAVE: write to localStorage + Supabase ────────────────────────────────
-function save(){
-  localStorage.setItem(currentDbKey(),JSON.stringify(DB));
-  if(USE_SUPABASE&&SUPABASE_USER){
-    sbSave().catch(e=>console.warn('Supabase save failed:',e));
+function saveLocalOnly(){
+  try{
+    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+    return true;
+  }catch(e){
+    console.warn('Local save failed:',e);
+    toast('Could not save. The uploaded photo may be too large.','bad');
+    return false;
   }
 }
+function save(){
+  if(!saveLocalOnly())return false;
+  if(USE_SUPABASE){
+    if(SUPABASE_USER)sbSave().catch(e=>console.warn('Supabase save failed:',e));
+    else sbSaveShared().catch(e=>console.warn('Shared save failed:',e));
+  }
+  return true;
+}
 
+async function saveAndWait(successMsg){
+  if(!saveLocalOnly())return false;
+  let synced=true;
+  if(USE_SUPABASE){
+    try{
+      if(SUPABASE_USER)await sbSave();
+      else await sbSaveShared();
+    }catch(e){
+      synced=false;
+      console.warn('Cloud save failed:',e);
+    }
+  }
+  if(synced)toast(successMsg,'good');
+  else toast('Saved on this device, but could not sync to other users.','bad');
+  return true;
+}
+
+async function sbSaveShared(){
+  await loadSupabaseSDK();
+  const client=getAnonClient();if(!client)throw new Error('Supabase client unavailable');
+  const dot=$('#syncDot');if(dot)dot.style.background='#f0a500';
+  const {error}=await client.from('establishments')
+    .update({data:DB,updated_at:new Date().toISOString()})
+    .eq('id',ACTIVE_EST_ID);
+  if(error){if(dot)dot.style.background='#c0392b';throw error;}
+  if(dot)dot.style.background='var(--sage)';
+}
+async function sbLoadShared(estId){
+  if(!USE_SUPABASE)return null;
+  await loadSupabaseSDK();
+  const client=getAnonClient();if(!client)return null;
+  const {data,error}=await client.from('establishments').select('data').eq('id',estId).maybeSingle();
+  if(error||!data)return null;
+  return data.data;
+}
+async function refreshSharedDb(estId){
+  if(!USE_SUPABASE)return false;
+  try{
+    const remote=await sbLoadShared(estId||ACTIVE_EST_ID);
+    if(remote){
+      DB=migrateLegacy(remote);
+      localStorage.setItem(estDbKey(estId||ACTIVE_EST_ID),JSON.stringify(DB));
+      return true;
+    }
+  }catch(e){console.warn('Shared load failed:',e);}
+  return false;
+}
 async function sbSave(){
   const client=sb();if(!client)return;
   const dot=$('#syncDot');if(dot)dot.style.background='#f0a500'; // yellow = saving
@@ -755,7 +814,8 @@ async function sbSave(){
     data:DB,
     updated_at:new Date().toISOString()
   },{onConflict:'id'});
-  if(dot)dot.style.background=error?'#c0392b':'var(--sage)'; // red=error, green=ok
+  if(error){if(dot)dot.style.background='#c0392b';throw error;}
+  if(dot)dot.style.background='var(--sage)'; // red=error, green=ok
 }
 
 // ── LOAD: try Supabase first, fall back to localStorage ──────────────────
@@ -938,6 +998,26 @@ function toast(msg,kind){
 function notify(scope,text,type,link){
   DB.notifications.unshift({id:uid(),scope,text,type:type||'info',ts:now(),read:false,link:link||null});
   save();renderBell();
+}
+function imageFileToLogoData(file,done){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=512;
+      const scale=Math.min(1,max/Math.max(img.width,img.height));
+      const w=Math.max(1,Math.round(img.width*scale));
+      const h=Math.max(1,Math.round(img.height*scale));
+      const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img,0,0,w,h);
+      done(canvas.toDataURL('image/jpeg',0.86));
+    };
+    img.onerror=()=>done(reader.result);
+    img.src=reader.result;
+  };
+  reader.readAsDataURL(file);
 }
 function statusOf(it){
   if(it.qty<=0)return{cls:'bad',label:'Out'};
@@ -1528,7 +1608,7 @@ function finalizeLogin(){
   resetIdleLogoutTimer();
   showLoginGreeting();
 }
-function doLogin(){
+async function doLogin(){
   $('#authMsg').textContent='';
   const input_=$('#loginEmail').value.trim();
   const pass=$('#loginPass').value;
@@ -1543,7 +1623,12 @@ function doLogin(){
   if(localUser&&localUser.role!=='boss'){
     if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-    SESSION=localUser;finalizeLogin();return;
+    $('#authMsg').textContent='Loading…';
+    await refreshSharedDb(ACTIVE_EST_ID);
+    const freshUser=(DB.users||[]).find(x=>(x.username&&x.username.toLowerCase()===inputLower)||(x.email&&x.email.toLowerCase()===inputLower))||localUser;
+    if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
+    if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
+    SESSION=freshUser;$('#authMsg').textContent='';finalizeLogin();return;
   }
   // Email login → try Supabase (owner)
   if(isEmail&&USE_SUPABASE){
@@ -1588,8 +1673,13 @@ function doLogin(){
   const user=DB.users.find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u));
   if(!user||user.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-  SESSION=user;
-  if(user.role==='boss'){renderEstPicker(user);return;}
+  if(user.role==='boss'){SESSION=user;renderEstPicker(user);return;}
+  $('#authMsg').textContent='Loading…';
+  await refreshSharedDb(ACTIVE_EST_ID);
+  const freshUser=(DB.users||[]).find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u))||user;
+  if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
+  if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
+  SESSION=freshUser;$('#authMsg').textContent='';
   finalizeLogin();
 }
 function logout(autoTimedOut){
@@ -1676,6 +1766,26 @@ applyBrand();renderQuickRoles();
         resetIdleLogoutTimer();
         setTimeout(()=>render(),50);
         checkCutoffs();
+        if(USE_SUPABASE){
+          refreshSharedDb(ACTIVE_EST_ID).then(ok=>{
+            if(!ok||!SESSION)return;
+            const fresh=DB.users.find(x=>x.id===id);
+            if(fresh)SESSION=fresh;
+            applySessionState(savedState);
+            const systemsNow=DB.systems||[];
+            const branchesNow=DB.branches||[];
+            if(SESSION.role==='boss'){
+              if(!BRANCH_TAB||!branchesNow.find(b=>b.id===BRANCH_TAB))BRANCH_TAB=branchesNow[0]?.id||null;
+              const branchSystems=systemsNow.filter(s=>(s.branchId||'branch_1')===BRANCH_TAB);
+              if(!branchSystems.find(s=>s.id===SCOPE))SCOPE=branchSystems[0]?.id||systemsNow[0]?.id||'';
+            }else{
+              if(!systemsNow.find(s=>s.id===SCOPE))SCOPE=SESSION.scope||systemsNow[0]?.id||'';
+              BRANCH_TAB=SESSION.branchId||(systemsNow.find(s=>s.id===SCOPE)?.branchId)||BRANCH_TAB;
+            }
+            saveSessionState();
+            applyBrand();buildNav();renderBell();render();
+          }).catch(e=>console.warn('Session refresh failed:',e));
+        }
       }
     }
   }catch(e){}
@@ -4637,8 +4747,8 @@ function settingsAppearance(main){
   const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
   document.body.appendChild(up);
   const upBtn=el('button','btn ghost sm','Upload image');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
-  const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=b.appName.slice(0,2).toUpperCase();save();applyBrand();};
-  up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{b.logo=r.result;prev.innerHTML=`<img src="${b.logo}">`;save();applyBrand();toast('Logo updated','good');};r.readAsDataURL(f);};
+  const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=b.appName.slice(0,2).toUpperCase();saveAndWait('Logo removed').then(ok=>{if(ok)applyBrand();});};
+  up.onchange=()=>{const f=up.files[0];if(!f)return;imageFileToLogoData(f,data=>{b.logo=data;prev.innerHTML=`<img src="${b.logo}">`;saveAndWait('Logo updated').then(ok=>{if(ok)applyBrand();});});};
   const lbtns=el('div');lbtns.style.display='flex';lbtns.style.gap='8px';lbtns.appendChild(upBtn);lbtns.appendChild(clrBtn);
   lrow.appendChild(prev);lrow.appendChild(lbtns);lf.appendChild(lrow);c.appendChild(lf);
   // accent colour
@@ -4989,8 +5099,8 @@ function settingsSystems(main){
   const branchUp=el('input');branchUp.type='file';branchUp.accept='image/*';branchUp.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
   document.body.appendChild(branchUp);
   const branchUpBtn=el('button','btn ghost sm','Upload photo');branchUpBtn.onclick=(e)=>{e.preventDefault();branchUp.value='';branchUp.click();};
-  const branchClrBtn=el('button','btn ghost sm','Remove');branchClrBtn.onclick=()=>{branch.logo='';logoPrev.innerHTML=(branch.short||branch.label||'BR').slice(0,2).toUpperCase();save();applyBrand();toast('Branch logo removed','good');};
-  branchUp.onchange=()=>{const f=branchUp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{branch.logo=r.result;logoPrev.innerHTML='<img src="'+branch.logo+'">';save();applyBrand();toast('Branch logo updated','good');};r.readAsDataURL(f);};
+  const branchClrBtn=el('button','btn ghost sm','Remove');branchClrBtn.onclick=()=>{branch.logo='';logoPrev.innerHTML=(branch.short||branch.label||'BR').slice(0,2).toUpperCase();saveAndWait('Branch logo removed').then(ok=>{if(ok)applyBrand();});};
+  branchUp.onchange=()=>{const f=branchUp.files[0];if(!f)return;imageFileToLogoData(f,data=>{branch.logo=data;logoPrev.innerHTML='<img src="'+branch.logo+'">';saveAndWait('Branch logo updated').then(ok=>{if(ok)applyBrand();});});};
   const branchBtns=el('div');branchBtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';branchBtns.appendChild(branchUpBtn);branchBtns.appendChild(branchClrBtn);
   logoRow.appendChild(logoPrev);logoRow.appendChild(branchBtns);branchLogoDiv.appendChild(logoRow);
   card.appendChild(branchLogoDiv);
@@ -5079,8 +5189,8 @@ function settingsData(main){
     const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
     document.body.appendChild(up);
     const upBtn=el('button','btn ghost sm','Upload photo');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
-    const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=(appNameI.value||'Stored').slice(0,2).toUpperCase();save();applyBrand();toast('Business logo removed','good');};
-    up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{b.logo=r.result;prev.innerHTML='<img src="'+b.logo+'">';save();applyBrand();toast('Business logo updated','good');};r.readAsDataURL(f);};
+    const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=(appNameI.value||'Stored').slice(0,2).toUpperCase();saveAndWait('Business logo removed').then(ok=>{if(ok)applyBrand();});};
+    up.onchange=()=>{const f=up.files[0];if(!f)return;imageFileToLogoData(f,data=>{b.logo=data;prev.innerHTML='<img src="'+b.logo+'">';saveAndWait('Business logo updated').then(ok=>{if(ok)applyBrand();});});};
     const lbtns=el('div');lbtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';lbtns.appendChild(upBtn);lbtns.appendChild(clrBtn);
     lrow.appendChild(prev);lrow.appendChild(lbtns);lf.appendChild(lrow);brandCard.appendChild(lf);
     const saveBrand=el('button','btn brass sm','Save branding');saveBrand.onclick=()=>{b.appName=appNameI.value.trim()||'Stored';save();applyBrand();toast('Business branding saved','good');};
@@ -5214,6 +5324,9 @@ setInterval(()=>{checkPendingRequests();},30*1000);
 </script>
 </body>
 </html>
+
+
+
 
 
 
