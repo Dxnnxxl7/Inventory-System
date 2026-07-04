@@ -1806,7 +1806,7 @@ function buildNav(){
     if((DB.branches||[]).length>1){
       const switchBtn=el('button','btn ghost sm','Switch branch');
       switchBtn.style.cssText='width:100%;margin-bottom:8px';
-      switchBtn.onclick=branchSwitchModal;
+      switchBtn.onclick=()=>{closeNav();setTimeout(branchSwitchModal,0);};
       foot.appendChild(switchBtn);
     }
     const currentBranch=(DB.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB.branches||[])[0];
@@ -4943,12 +4943,6 @@ function settingsSystems(main){
       sw.appendChild(s);
     });
     af.appendChild(sw);appDiv.appendChild(af);
-    // app name
-    const appNameI=input(b.appName||'StockLine','App / brand name');
-    appDiv.appendChild(field('App name',appNameI));
-    const aSave=el('button','btn brass sm','Save');aSave.style.marginTop='8px';
-    aSave.onclick=()=>{b.appName=appNameI.value.trim()||'StockLine';save();applyBrand();toast('Saved','good');};
-    appDiv.appendChild(aSave);
     card.appendChild(appDiv);
   }
 
@@ -4957,6 +4951,23 @@ function settingsSystems(main){
 
 /* ---- Account ---- */
 function settingsAccount(main){
+  if(SESSION.role==='boss'){
+    const bc=el('div','card pad');bc.style.marginBottom='12px';
+    const bizI=input(DB.venue?.name||DB.brand?.appName||'','Business name');
+    bc.appendChild(field('Business name',bizI,'Shown at the top of the app for the owner account.'));
+    const bizErr=el('div','err');bc.appendChild(bizErr);
+    const bizOk=el('button','btn brass','Save business name');
+    bizOk.onclick=()=>{
+      const n=bizI.value.trim();
+      if(!n){bizErr.textContent='Business name cannot be blank.';return;}
+      if(!DB.venue)DB.venue={};
+      if(!DB.brand)DB.brand={};
+      DB.venue.name=n;
+      DB.brand.appName=n;
+      save();applyBrand();buildNav();bizErr.textContent='';toast('Business name updated','good');
+    };
+    bc.appendChild(bizOk);main.appendChild(bc);
+  }
   const nc=el('div','card pad');nc.style.marginBottom='12px';
   const nameI=input(SESSION.name,'Full name');
   nc.appendChild(field('Display name',nameI,'Shown in greetings, logs and history.'));
