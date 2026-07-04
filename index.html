@@ -1134,12 +1134,37 @@ $('#peekBtn').onclick=()=>{
   const p=$('#loginPass');const show=p.type==='password';
   p.type=show?'text':'password';$('#peekBtn').textContent=show?'Hide':'Show';
 };
-function showForgotPassword(){
+function pushPublicState(view){
+  if(SESSION)return;
+  try{
+    const clean=location.href.split('#')[0];
+    const suffix=view&&view!=='landing'?'#'+view:'';
+    history.pushState({publicView:view||'landing'},'',clean+suffix);
+  }catch(e){}
+}
+function replacePublicState(view){
+  if(SESSION)return;
+  try{
+    const clean=location.href.split('#')[0];
+    const suffix=view&&view!=='landing'?'#'+view:'';
+    history.replaceState({publicView:view||'landing'},'',clean+suffix);
+  }catch(e){}
+}
+function showLanding(push){
+  $('#app').style.display='none';
+  $('#auth').style.display='none';
+  $('#register').style.display='none';
+  const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
+  const land=$('#landing');if(land)land.style.display='block';
+  if(push)pushPublicState('landing');
+}
+function showForgotPassword(push=true){
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';
   $('#register').style.display='none';
   const fp=$('#forgotPassword');if(fp){fp.style.display='flex';$('#fpMsg').textContent='';}
   const em=$('#fpEmail');if(em){em.value=$('#loginEmail').value||'';em.focus();}
+  if(push)pushPublicState('forgot');
 }
 async function doForgotPassword(){
   const email=$('#fpEmail').value.trim();
@@ -1159,7 +1184,7 @@ async function doForgotPassword(){
 }
 const fpBtn=$('#fpBtn');if(fpBtn)fpBtn.onclick=doForgotPassword;
 const fpEmail=$('#fpEmail');if(fpEmail)fpEmail.addEventListener('keydown',e=>{if(e.key==='Enter')doForgotPassword();});
-function showRegister(){
+function showRegister(push=true){
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
@@ -1250,14 +1275,29 @@ function showRegister(){
     }
   });
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
+  if(push)pushPublicState('register');
 }
-function showLogin(){
+function showLogin(push=true){
   const land=$('#landing');if(land)land.style.display='none';
   $('#register').style.display='none';
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
   $('#auth').style.display='flex';
   $('#authMsg').textContent='';
+  if(push)pushPublicState('login');
 }
+window.addEventListener('popstate',e=>{
+  if(SESSION)return;
+  const view=(e.state&&e.state.publicView)||location.hash.replace('#','')||'landing';
+  if(view==='login')showLogin(false);
+  else if(view==='register')showRegister(false);
+  else if(view==='forgot')showForgotPassword(false);
+  else showLanding(false);
+});
+const firstPublicView=location.hash.replace('#','')||'landing';
+replacePublicState(firstPublicView);
+if(firstPublicView==='login')showLogin(false);
+else if(firstPublicView==='register')showRegister(false);
+else if(firstPublicView==='forgot')showForgotPassword(false);
 async function doRegister(){
   const name=$('#regName').value.trim();
   const est=$('#regEst')?$('#regEst').value.trim():'';
