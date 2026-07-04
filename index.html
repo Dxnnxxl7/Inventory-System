@@ -2302,6 +2302,12 @@ function visibleSystems(){
   }
   return all.filter(s=>s.id===SESSION.scope);
 }
+function branchSystemsForUser(){
+  const all=DB.systems||[];
+  if(SESSION.role==='boss')return visibleSystems();
+  const assignedBranch=SESSION.branchId||(all.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+  return all.filter(s=>(s.branchId||'branch_1')===assignedBranch);
+}
 function activeScope(){
   const systems=DB.systems||[];
   if(SESSION.role==='boss'||SESSION.role==='incharge'){
@@ -2517,7 +2523,12 @@ function supplierCutoffCard(scope){
 }
 
 /* ---------- STOCKS ---------- */
-function canEditStock(){return SESSION.role==='boss'||(SESSION.role==='incharge'&&activeScope()===SESSION.scope);}
+function canEditStock(scope){
+  const target=scope||activeScope();
+  if(SESSION.role==='boss')return true;
+  if(SESSION.role==='incharge')return visibleSystems().some(s=>s.id===target);
+  return false;
+}
 function pageStocks(main){
   const scope=activeScope();
 
@@ -2658,10 +2669,10 @@ function pageStocks(main){
         <td>${invoiceCell}</td>
         <td style="color:#111;font-weight:600">${arrivedCell}</td>
         <td style="color:#111;font-weight:600">${expCell}</td>`;
-      if(canEditStock()){
+      if(canEditStock(scope)){
         const td=el('td');const ra=el('div','row-actions');
         const ed=el('button','iconbtn','✎');ed.title='Edit';ed.onclick=()=>itemModal(scope,it);
-        const systems=DB.systems||[];
+        const systems=visibleSystems();
         const otherSys=systems.find(s=>s.id!==scope);
         let mv=null;
         if(otherSys){
@@ -3366,27 +3377,38 @@ function deliveryModal(scope){
   let delivScope=scope;
   const sups=DB.suppliers;
   const body=el('div');
-  // Boss sees all systems; incharge/staff locked to their own scope only
+  const lines=[];
+  let linesWrap=null;
+  // Everyone logging a delivery chooses which system in their branch receives it.
   const scopeSeg=el('div','seg');scopeSeg.style.marginBottom='14px';
-  const visSystems=visibleSystems();
-  if(SESSION.role==='boss'&&visSystems.length>1){
+  const visSystems=branchSystemsForUser();
+  if(!visSystems.find(s=>s.id===delivScope))delivScope=visSystems[0]?.id||scope;
+  if(visSystems.length){
     visSystems.forEach(s=>{
       const b=el('button',delivScope===s.id?'on '+s.id:'',scopeLabel(s.id));
-      b.onclick=()=>{delivScope=s.id;[...scopeSeg.children].forEach(x=>x.className='');b.className='on '+s.id;};
+      b.onclick=()=>{
+        delivScope=s.id;
+        [...scopeSeg.children].forEach(x=>x.className='');
+        b.className='on '+s.id;
+        if(linesWrap){
+          lines.length=0;
+          linesWrap.innerHTML='';
+          addLineRow();
+        }
+      };
       scopeSeg.appendChild(b);
     });
     body.appendChild(field('Delivering to',scopeSeg));
   }else{
-    delivScope=SESSION.role==='boss'?(visSystems[0]?.id||scope):SESSION.scope;
+    delivScope=scope;
   }
-  const items=()=>DB.items.filter(i=>!i.unused); // all items both systems
+  const items=()=>DB.items.filter(i=>!i.unused&&i.scope===delivScope);
   const supI=selectEl([{label:'— direct / other —',value:''},...sups.map(s=>({label:s.name,value:s.id}))]);
   body.appendChild(field('Supplier',supI));
   const invI=input('','e.g. INV-10234');
   body.appendChild(field('Invoice number',invI,'Required — won’t save without it.'));
   body.appendChild(el('div','nav-group-label','Items received'));
-  const linesWrap=el('div');body.appendChild(linesWrap);
-  const lines=[];
+  linesWrap=el('div');body.appendChild(linesWrap);
   function addLineRow(preItem){
     const idx=lines.length;
     const line={itemId:preItem?preItem.id:'',qty:'',store:preItem?preItem.store:'dry',temp:preItem?(preItem.temp!==undefined&&preItem.temp!==''?String(preItem.temp):String(defaultTemp(preItem.store)||'')):'',unit:preItem?preItem.unit:'unit',name:preItem?preItem.name:'',isNew:false};
@@ -3768,25 +3790,25 @@ function pageUsage(main){
   main.appendChild(c);
 }
 function usageModal(scope){
-  const allItems=visibleSystems().flatMap(s=>activeItems(s.id));
+  const usageSystems=branchSystemsForUser();
+  const allItems=usageSystems.flatMap(s=>activeItems(s.id));
   if(!allItems.length){toast('Add stock items first');return;}
 
   let selectedItem=null;
-  let scopeFilter='all'; // 'all','kitchen','restaurant'
+  let scopeFilter=usageSystems.length===1?usageSystems[0].id:'';
   let searchQ='';
 
   const body=el('div');
 
   // ---- scope chips ----
   const scopeRow=el('div','seg');scopeRow.style.marginBottom='10px';
-  const usageSystems=visibleSystems();
-  [['all','All'],...usageSystems.map(s=>[s.id,scopeLabel(s.id)])].forEach(([v,l])=>{
+  usageSystems.map(s=>[s.id,scopeLabel(s.id)]).forEach(([v,l])=>{
     const b=el('button',scopeFilter===v?'on':'',l);
-    b.onclick=()=>{scopeFilter=v;filterList();paintScopeBtns()};
+    b.onclick=()=>{scopeFilter=v;selectedItem=null;qtySection.style.display='none';filterList();paintScopeBtns()};
     scopeRow.appendChild(b);
   });
-  function paintScopeBtns(){const ids=['all',...usageSystems.map(s=>s.id)];[...scopeRow.children].forEach((b,i)=>{b.className=scopeFilter===ids[i]?'on ':''});};
-  body.appendChild(scopeRow);
+  function paintScopeBtns(){const ids=usageSystems.map(s=>s.id);[...scopeRow.children].forEach((b,i)=>{b.className=scopeFilter===ids[i]?'on ':''});};
+  body.appendChild(field('Used from system',scopeRow));
 
   // ---- search ----
   const srchWrap=el('div','searchbar');srchWrap.style.marginBottom='8px';
@@ -3805,12 +3827,18 @@ function usageModal(scope){
   function filterList(){
     listWrap.innerHTML='';
     const q=searchQ.toLowerCase().trim();
-    const scopes=scopeFilter==='all'?usageSystems.map(s=>s.id):[scopeFilter];
+    if(!scopeFilter){
+      noRes.textContent='Choose a system first.';
+      noRes.style.display='block';
+      return;
+    }
+    const scopes=[scopeFilter];
     const visible=allItems.filter(i=>{
       if(!scopes.includes(i.scope))return false;
       if(q&&!i.name.toLowerCase().includes(q)&&!i.category.toLowerCase().includes(q))return false;
       return true;
     });
+    noRes.textContent='No items match.';
     noRes.style.display=visible.length?'none':'block';
     visible.forEach(it=>{
       const row=el('div');
