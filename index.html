@@ -4795,22 +4795,27 @@ function settingsSystems(main){
     DB.branches.unshift({id:'branch_1',label:mn,short:(mn.slice(0,3)||'MAI').toUpperCase()});
   }
   if(systems)systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
-  // In-charge only sees their own branch
+  // This settings page edits only the branch the user is currently inside.
+  const allBranches=DB.branches||[];
   const inchargeBranchId=isIncharge?(SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1'):null;
-  const branches=isBoss?DB.branches:(DB.branches||[]).filter(b=>b.id===inchargeBranchId);
+  if(isBoss&&(!BRANCH_TAB||!allBranches.find(b=>b.id===BRANCH_TAB))){
+    const scopeBranch=systems.find(s=>s.id===SCOPE)?.branchId;
+    BRANCH_TAB=allBranches.find(b=>b.id===scopeBranch)?.id||allBranches[0]?.id||null;
+  }
+  const visibleBranchId=isBoss?BRANCH_TAB:inchargeBranchId;
+  const branches=allBranches.filter(b=>b.id===visibleBranchId);
 
-  // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
   if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
     BRANCH_TAB=branches[0]?.id||null;
   }
 
-  // ── Top bar: branch sub-tabs + Add branch button ──────────────────────
+  // ?? Top bar: current branch label + Add branch button ?????????????????
   const topBar=el('div','flex-between no-filter');topBar.style.marginBottom='14px';
 
   const subTabs=el('div','seg');subTabs.style.flexWrap='wrap';subTabs.style.gap='6px';
   branches.forEach(b=>{
-    const btn=el('button',BRANCH_TAB===b.id?'on':'',b.label);
-    btn.onclick=()=>{BRANCH_TAB=b.id;render();};
+    const btn=el('button','on',b.label);
+    btn.disabled=true;
     subTabs.appendChild(btn);
   });
   topBar.appendChild(subTabs);
@@ -4893,7 +4898,7 @@ function settingsSystems(main){
       save();applyBrand();toast('Saved','good');
     };
     detRow.appendChild(saveDetBtn);
-    if(branches.length>1){
+    if((DB.branches||[]).length>1){
       const _bid=branch.id;const _blabel=branch.label;
       const delBranch=el('button','btn ghost tiny','Delete branch');
       delBranch.style.color='var(--bad)';
