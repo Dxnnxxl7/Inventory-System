@@ -1287,10 +1287,16 @@ function showRegister(push=true){
   const sub=$('#regSub');
   const btn=$('#regBtn');
 
-  // Start in "loading" state
+  // Start with the branch selector visible so the form does not feel delayed.
   if(estF)estF.style.display='none';
-  if(estCF)estCF.style.display='none';
-  if(sub)sub.textContent='Loading\u2026';
+  if(estCF)estCF.style.display='block';
+  const usernameF=$('#regUsernameField');
+  if(usernameF)usernameF.style.display='block';
+  if(sel){
+    sel.disabled=true;
+    sel.innerHTML='<option value="">Loading branches\u2026</option>';
+  }
+  if(sub)sub.textContent='Checking branches\u2026';
   if(btn)btn.textContent='Continue';
 
   loadSupabaseSDK().then(async()=>{
@@ -1343,12 +1349,12 @@ function showRegister(push=true){
     if(estF)estF.style.display=hasOwner?'none':'block';
     if(estCF)estCF.style.display=hasOwner?'block':'none';
     // Show username field for staff (owner uses email as username)
-    const usernameF=$('#regUsernameField');
     if(usernameF)usernameF.style.display=hasOwner?'block':'none';
     if(sub)sub.textContent=hasOwner?'Select your branch to request access.':'Create your owner account to get started.';
     if(btn)btn.textContent=hasOwner?'Request to join':'Create account';
 
     if(sel&&hasOwner){
+      sel.disabled=false;
       sel.innerHTML='<option value="">Select branch\u2026</option>';
       allBranches.forEach(b=>{
         const opt=document.createElement('option');
@@ -1356,6 +1362,9 @@ function showRegister(push=true){
         opt.textContent=b.label;
         sel.appendChild(opt);
       });
+    }else if(sel){
+      sel.disabled=false;
+      sel.innerHTML='<option value="">No branch yet</option>';
     }
   });
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
