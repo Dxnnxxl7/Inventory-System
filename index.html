@@ -242,13 +242,16 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 
 .sticky-bar{position:sticky;top:61px;z-index:15;background:#fff;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .sticky-bar .seg{margin-bottom:0}
-.stock-summary-compact.card.pad{padding:12px 14px;margin-bottom:10px}
-.stock-summary-compact > div:first-child{margin-bottom:8px!important}
-.stock-summary-compact .stat-row{margin-bottom:6px}
+.stock-summary-compact.card.pad{padding:10px 14px;margin-bottom:8px}
+.stock-summary-compact > div:first-child{margin-bottom:7px!important}
+.stock-summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.stock-summary-head .seg{justify-content:flex-end;flex-wrap:wrap}
+.stock-summary-head .seg button{padding:8px 12px}
+.stock-summary-compact .stat-row{margin-bottom:5px}
 .stock-summary-compact .stat-row .card.stat{padding:5px 10px}
 .stock-summary-compact .stat .v{font-size:16px!important}
-.stock-summary-compact .stock-legend{padding:6px 0 0!important}
-.stock-controls{padding-top:8px}
+.stock-summary-compact .stock-legend{padding:5px 0 0!important}
+.stock-controls{padding-top:6px}
 .page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
 .page-head .eyebrow{font-family:'Avenir Next',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-deep);margin-bottom:2px}
 .page-head h2{font-size:20px;margin:0}
@@ -469,6 +472,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .mobile-scroll-x .btn{flex:none;white-space:nowrap}
 
   /* summary stat tiles: 3-per-row grid instead of overflowing flex */
+  .stock-summary-head{display:block}
+  .stock-summary-head .seg{justify-content:flex-start;margin-top:8px}
   .card .stat,.card.stat{padding:8px 6px;min-width:0}
   .card.stat .k{font-size:9px}
   .card.stat .v{font-size:16px}
@@ -2370,10 +2375,12 @@ function scopeSummaryCard(scope,hideLink){
   const sysDesc=sys?.description||'';
 
   // big stock header
-  card.innerHTML=`<div style="margin-bottom:12px">
-    <b style="font-size:20px;display:block;line-height:1.2">Stocks</b>
-    ${sysDesc?`<div class="suptag" style="margin-top:2px">${esc(sysDesc)}</div>`:''}
-    <div class="suptag" style="margin-top:4px">In-charge Boss</div>
+  card.innerHTML=`<div class="stock-summary-head" style="margin-bottom:12px">
+    <div>
+      <b style="font-size:20px;display:block;line-height:1.2">Stocks</b>
+      ${sysDesc?`<div class="suptag" style="margin-top:2px">${esc(sysDesc)}</div>`:''}
+      <div class="suptag" style="margin-top:4px">In-charge Boss</div>
+    </div>
   </div>`;
 
   // compact stat row
@@ -2444,18 +2451,22 @@ function pageStocks(main){
   // scope tabs — only systems in current branch, hidden if only 1
   const branchId=BRANCH_TAB||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
   const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
+  let stRow=null;
   if(SESSION.role==='boss'&&branchSystems.length>1){
-    const stRow=el('div','seg no-filter');stRow.style.marginBottom='10px';
+    stRow=el('div','seg no-filter');
     branchSystems.forEach(s=>{
       const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));
       b.onclick=()=>{SCOPE=s.id;STOCKS_SUBTAB='stocks';STOCKS_CAT='';buildNav();render();};
       stRow.appendChild(b);
     });
-    main.appendChild(stRow);
   }
 
   // summary card inline (compact)
   const sum=scopeSummaryCard(scope,true);sum.classList.add('no-filter','stock-summary-compact');
+  if(stRow){
+    const summaryHead=sum.querySelector('.stock-summary-head');
+    if(summaryHead)summaryHead.appendChild(stRow);
+  }
   main.appendChild(sum);
 
   // --- sticky controls: sub-tabs + search + add + category pills ---
