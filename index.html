@@ -3,7 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockLine — Restaurant Inventory</title>
+<title>Stored</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1a1a12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stored">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{
   --ink:#14110d;
@@ -398,7 +405,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div class="field">
       <label>Password</label>
       <div class="inwrap">
-        <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••">
+        <input id="loginPass" type="password" autocomplete="current-password" placeholder="">
         <button class="peek" id="peekBtn" type="button">Show</button>
       </div>
     </div>
@@ -622,7 +629,7 @@ function seed(){
   ];
   return {
     venue:{name:'The Copper Table',address:'18 Granary Row, London E1 6QL',location:'Ground floor + cellar',area:'Spitalfields'},
-    brand:{appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'},
+    brand:{appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'},
     systems:[{id:'kitchen',label:'System 1',short:'SYS1',branchId:'branch_1'},{id:'restaurant',label:'System 2',short:'SYS2',branchId:'branch_1'}], // active branch systems
     branches:[{id:'branch_1',label:'Main Branch',short:'MAIN'}],
     users:[
@@ -669,11 +676,11 @@ function load(){
       }
       // ensure all top-level fields exist
       if(!d.venue)d.venue={name:'',address:'',location:'',area:''};
-      if(!d.brand)d.brand={appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
+      if(!d.brand)d.brand={appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
       if(!d.brand.dateFormat)d.brand.dateFormat='DD/MM/YYYY';
       if(!d.brand.timeFormat)d.brand.timeFormat='24';
       if(!d.brand.accent)d.brand.accent='#b5862f';
-      if(!d.brand.appName)d.brand.appName='Stored';
+      if(!d.brand.appName)d.brand.appName='StockLine';
       if(!d.brand.kitchenLabel)d.brand.kitchenLabel='System 1';
       if(!d.brand.restaurantLabel)d.brand.restaurantLabel='System 2';
       if(!d.brand.kitchenShort)d.brand.kitchenShort='SYS1';
@@ -735,145 +742,18 @@ function load(){
   const s=seed();s._schema=SCHEMA_VERSION;localStorage.setItem(currentDbKey(),JSON.stringify(s));return s;
 }
 function currentDbKey(){return estDbKey(ACTIVE_EST_ID);}
-const SYNC_PENDING_PREFIX='stockline_pending_sync_';
-function pendingSyncKey(estId){return SYNC_PENDING_PREFIX+(estId||ACTIVE_EST_ID||'default');}
-function isBrowserOnline(){return !('onLine' in navigator)||navigator.onLine;}
-function hasPendingSync(estId){try{return localStorage.getItem(pendingSyncKey(estId))==='1';}catch(e){return false;}}
-function setPendingSync(estId){try{localStorage.setItem(pendingSyncKey(estId),'1');}catch(e){}}
-function clearPendingSync(estId){try{localStorage.removeItem(pendingSyncKey(estId));}catch(e){}}
-function updateSyncDot(state){
-  const dot=$('#syncDot');if(!dot)return;
-  if(!USE_SUPABASE){dot.style.display='none';return;}
-  dot.style.display='inline-block';
-  if(state==='syncing'){
-    dot.style.background='#f0a500';
-    dot.title='Syncing changes...';
-    return;
-  }
-  if(!isBrowserOnline()){
-    dot.style.background='#888';
-    dot.title=hasPendingSync()?'Offline mode - changes will sync when internet is back.':'Offline mode';
-    return;
-  }
-  if(hasPendingSync()){
-    dot.style.background='#f0a500';
-    dot.title='Changes waiting to sync';
-    return;
-  }
-  if(state==='error'){
-    dot.style.background='#c0392b';
-    dot.title='Sync failed - changes are saved on this device';
-    return;
-  }
-  dot.style.background='var(--sage)';
-  dot.title='Synced to cloud';
-}
-function markSyncPending(estId){if(!USE_SUPABASE)return;setPendingSync(estId);updateSyncDot();}
-function markSyncDone(estId){clearPendingSync(estId);updateSyncDot();}
-function scheduleCloudSave(){
-  if(!USE_SUPABASE)return;
-  markSyncPending(ACTIVE_EST_ID);
-  if(!isBrowserOnline())return;
-  retryPendingSync(false);
-}
-let _syncingOfflineChanges=false;
-async function retryPendingSync(showToast){
-  if(!USE_SUPABASE||!hasPendingSync()||_syncingOfflineChanges){updateSyncDot();return false;}
-  if(!isBrowserOnline()){updateSyncDot();return false;}
-  _syncingOfflineChanges=true;
-  updateSyncDot('syncing');
-  try{
-    if(SUPABASE_USER)await sbSave();
-    else await sbSaveShared();
-    markSyncDone(ACTIVE_EST_ID);
-    if(showToast)toast('Offline changes synced','good');
-    return true;
-  }catch(e){
-    console.warn('Pending sync failed:',e);
-    markSyncPending(ACTIVE_EST_ID);
-    updateSyncDot('error');
-    return false;
-  }finally{
-    _syncingOfflineChanges=false;
-  }
-}
-async function syncOrRefreshSharedDb(estId){
-  if(hasPendingSync(estId)){
-    if(estId&&estId!==ACTIVE_EST_ID){ACTIVE_EST_ID=estId;DB=load();}
-    await retryPendingSync(false);
-    return true;
-  }
-  return refreshSharedDb(estId);
-}
 
 // ── SAVE: write to localStorage + Supabase ────────────────────────────────
-function saveLocalOnly(){
-  try{
-    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
-    return true;
-  }catch(e){
-    console.warn('Local save failed:',e);
-    toast('Could not save. The uploaded photo may be too large.','bad');
-    return false;
-  }
-}
 function save(){
-  if(!saveLocalOnly())return false;
-  scheduleCloudSave();
-  return true;
-}
-
-async function saveAndWait(successMsg){
-  if(!saveLocalOnly())return false;
-  if(!USE_SUPABASE){toast(successMsg,'good');return true;}
-  markSyncPending(ACTIVE_EST_ID);
-  if(!isBrowserOnline()){
-    toast('Saved offline - will sync when internet is back.','good');
-    return true;
+  localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+  if(USE_SUPABASE&&SUPABASE_USER){
+    sbSave().catch(e=>console.warn('Supabase save failed:',e));
   }
-  const synced=await retryPendingSync(false);
-  if(synced)toast(successMsg,'good');
-  else toast('Saved on this device, but could not sync to other users yet.','bad');
-  return true;
 }
 
-async function sbSaveShared(){
-  if(!isBrowserOnline())throw new Error('Offline');
-  await loadSupabaseSDK();
-  const client=getAnonClient();if(!client)throw new Error('Supabase client unavailable');
-  updateSyncDot('syncing');
-  const {error}=await client.from('establishments')
-    .update({data:DB,updated_at:new Date().toISOString()})
-    .eq('id',ACTIVE_EST_ID);
-  if(error){updateSyncDot('error');throw error;}
-  markSyncDone(ACTIVE_EST_ID);
-}
-async function sbLoadShared(estId){
-  if(!USE_SUPABASE||!isBrowserOnline())return null;
-  await loadSupabaseSDK();
-  const client=getAnonClient();if(!client)return null;
-  const {data,error}=await client.from('establishments').select('data').eq('id',estId).maybeSingle();
-  if(error||!data)return null;
-  return data.data;
-}
-async function refreshSharedDb(estId){
-  if(!USE_SUPABASE||!isBrowserOnline())return false;
-  try{
-    const remote=await sbLoadShared(estId||ACTIVE_EST_ID);
-    if(remote){
-      DB=migrateLegacy(remote);
-      localStorage.setItem(estDbKey(estId||ACTIVE_EST_ID),JSON.stringify(DB));
-      return true;
-    }
-  }catch(e){console.warn('Shared load failed:',e);}
-  return false;
-}
 async function sbSave(){
-  if(!isBrowserOnline())throw new Error('Offline');
-  await loadSupabaseSDK();
-  const client=sb();if(!client)throw new Error('Supabase client unavailable');
-  if(!SUPABASE_USER)throw new Error('Cloud user unavailable');
-  updateSyncDot('syncing');
+  const client=sb();if(!client)return;
+  const dot=$('#syncDot');if(dot)dot.style.background='#f0a500'; // yellow = saving
   const name=DB.venue?.name||DB.brand?.appName||'Establishment';
   const {error}=await client.from('establishments').upsert({
     id:ACTIVE_EST_ID,
@@ -882,11 +762,10 @@ async function sbSave(){
     data:DB,
     updated_at:new Date().toISOString()
   },{onConflict:'id'});
-  if(error){updateSyncDot('error');throw error;}
-  markSyncDone(ACTIVE_EST_ID);
+  if(dot)dot.style.background=error?'#c0392b':'var(--sage)'; // red=error, green=ok
 }
 
-// ?? LOAD: try Supabase first, fall back to localStorage ??????????????????
+// ── LOAD: try Supabase first, fall back to localStorage ──────────────────
 async function sbLoad(estId){
   const client=sb();if(!client||!SUPABASE_USER)return null;
   const {data,error}=await client.from('establishments')
@@ -936,41 +815,6 @@ let BRANCH_TAB=null; // active branch sub-tab in Branches name
 let CATS_TAB='kitchen'; // active sub-tab on Categories page
 let DELIV_CAT_FILTER=''; // active category filter on Deliveries page ('' = all)
 
-function currentSessionState(){
-  return {
-    id:SESSION?.id,
-    estId:ACTIVE_EST_ID,
-    page:CURRENT,
-    scope:SCOPE,
-    branchId:BRANCH_TAB,
-    histTab:HIST_TAB,
-    delivSubtab:DELIV_SUBTAB,
-    orderSubtab:ORDER_SUBTAB,
-    stocksSubtab:STOCKS_SUBTAB,
-    stocksCat:STOCKS_CAT,
-    settingsTab:SETTINGS_TAB,
-    catsTab:CATS_TAB,
-    delivCatFilter:DELIV_CAT_FILTER
-  };
-}
-function saveSessionState(){
-  if(!SESSION)return;
-  try{sessionStorage.setItem('stockline_session',JSON.stringify(currentSessionState()));}catch(e){}
-}
-function applySessionState(d){
-  if(!d)return;
-  if(d.page)CURRENT=d.page;
-  if(d.scope)SCOPE=d.scope;
-  if(d.branchId)BRANCH_TAB=d.branchId;
-  if(d.histTab)HIST_TAB=d.histTab;
-  if(d.delivSubtab)DELIV_SUBTAB=d.delivSubtab;
-  if(d.orderSubtab)ORDER_SUBTAB=d.orderSubtab;
-  if(d.stocksSubtab)STOCKS_SUBTAB=d.stocksSubtab;
-  if(d.stocksCat!=null)STOCKS_CAT=d.stocksCat;
-  if(d.settingsTab)SETTINGS_TAB=d.settingsTab;
-  if(d.catsTab)CATS_TAB=d.catsTab;
-  if(d.delivCatFilter!=null)DELIV_CAT_FILTER=d.delivCatFilter;
-}
 /* ---------- helpers ---------- */
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
@@ -1067,26 +911,6 @@ function notify(scope,text,type,link){
   DB.notifications.unshift({id:uid(),scope,text,type:type||'info',ts:now(),read:false,link:link||null});
   save();renderBell();
 }
-function imageFileToLogoData(file,done){
-  const reader=new FileReader();
-  reader.onload=()=>{
-    const img=new Image();
-    img.onload=()=>{
-      const max=512;
-      const scale=Math.min(1,max/Math.max(img.width,img.height));
-      const w=Math.max(1,Math.round(img.width*scale));
-      const h=Math.max(1,Math.round(img.height*scale));
-      const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-      const ctx=canvas.getContext('2d');
-      ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
-      ctx.drawImage(img,0,0,w,h);
-      done(canvas.toDataURL('image/jpeg',0.86));
-    };
-    img.onerror=()=>done(reader.result);
-    img.src=reader.result;
-  };
-  reader.readAsDataURL(file);
-}
 function statusOf(it){
   if(it.qty<=0)return{cls:'bad',label:'Out'};
   if(it.qty<it.par)return{cls:'warn',label:'Low'};
@@ -1100,23 +924,22 @@ function storeChip(store,scope){
 
 /* ---------- AUTH ---------- */
 function applyBrand(){
-  const b=(DB&&DB.brand)?DB.brand:{appName:'Stored',logo:'',accent:'#b5862f'};
-  const bizName=DB?.venue?.name||b.appName||'Stored';
+  const b=(DB&&DB.brand)?DB.brand:{appName:'StockLine',logo:'',accent:'#b5862f'};
+  const bizName=DB?.venue?.name||b.appName||'StockLine';
   document.documentElement.style.setProperty('--brass',b.accent||'#b5862f');
-  const currentBranch=(DB?.branches||[]).find(br=>br.id===BRANCH_TAB)||(DB?.branches||[])[0];
-  const branchLabel=currentBranch?.label||DB?.venue?.name||'—';
   const initials=bizName.slice(0,2).toUpperCase();
-  const branchInitials=(branchLabel||bizName).slice(0,2).toUpperCase();
-  const businessLogoHTML=b.logo?`<img src="${b.logo}" alt="">`:initials;
-  const topLogoHTML=currentBranch?.logo?`<img src="${currentBranch.logo}" alt="">`:businessLogoHTML||branchInitials;
-  const al=$('#authLogo');if(al)al.innerHTML=businessLogoHTML;
-  const tl=$('#tbLogo');if(tl)tl.innerHTML=topLogoHTML;
+  const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:initials;
+  const al=$('#authLogo');if(al)al.innerHTML=logoHTML;
+  const tl=$('#tbLogo');if(tl)tl.innerHTML=logoHTML;
   const ab=$('#authBrand');if(ab)ab.textContent=bizName;
   // Top left: business name (large) + current branch name (small below)
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
+  // Get current branch label
+  const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
+  const branchLabel=currentBranch?.label||DB?.venue?.name||'—';
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
-  updateSyncDot();
+  const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
 }
 function renderQuickRoles(){
   const wrap=$('#quickRoles');wrap.innerHTML='';
@@ -1170,6 +993,7 @@ async function doForgotPassword(){
   $('#fpMsg').textContent='\u2705 Reset link sent! Check your email.';
 }
 const fpBtn=$('#fpBtn');if(fpBtn)fpBtn.onclick=doForgotPassword;
+const fpEmail=$('#fpEmail');if(fpEmail)fpEmail.addEventListener('keydown',e=>{if(e.key==='Enter')doForgotPassword();});
 function showRegister(){
   $('#auth').style.display='none';
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
@@ -1373,7 +1197,10 @@ async function doRegister(){
 }
 // Wire up register buttons
 $('#regBtn').onclick=doRegister;
+$('#regPass').addEventListener('keydown',e=>{if(e.key==='Enter')doRegister();});
 $('#peekRegBtn').onclick=()=>{const i=$('#regPass');const s=i.type==='text';i.type=s?'password':'text';$('#peekRegBtn').textContent=s?'Show':'Hide';};
+$('#loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+$('#loginEmail').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 $('#loginBtn').onclick=doLogin;
 $('#peekBtn').onclick=()=>{const i=$('#loginPass');const s=i.type==='text';i.type=s?'password':'text';$('#peekBtn').textContent=s?'Show':'Hide';};
 
@@ -1581,11 +1408,11 @@ async function sbSwitchTo(estId){
 // Migrate legacy data structure
 function migrateLegacy(d){
   if(!d.venue)d.venue={name:'',address:'',location:'',area:''};
-  if(!d.brand)d.brand={appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
+  if(!d.brand)d.brand={appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
   if(!d.brand.dateFormat)d.brand.dateFormat='DD/MM/YYYY';
   if(!d.brand.timeFormat)d.brand.timeFormat='24';
   if(!d.brand.accent)d.brand.accent='#b5862f';
-  if(!d.brand.appName)d.brand.appName='Stored';
+  if(!d.brand.appName)d.brand.appName='StockLine';
   if(!d.brand.kitchenLabel)d.brand.kitchenLabel='System 1';
   if(!d.brand.restaurantLabel)d.brand.restaurantLabel='System 2';
   if(!d.brand.kitchenShort)d.brand.kitchenShort='SYS1';
@@ -1667,17 +1494,15 @@ function finalizeLogin(){
     BRANCH_TAB=userBranchId;
   }
   // persist session
-  saveSessionState();
+  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT}));}catch(e){}
   applyBrand();
   $('#auth').style.display='none';$('#app').style.display='block';
   if(SESSION.role==='boss')subscribeRealtime();
   CURRENT='stocks';buildNav();renderBell();render();
   checkCutoffs();
-  resetIdleLogoutTimer();
-  retryPendingSync(false);
   showLoginGreeting();
 }
-async function doLogin(){
+function doLogin(){
   $('#authMsg').textContent='';
   const input_=$('#loginEmail').value.trim();
   const pass=$('#loginPass').value;
@@ -1692,12 +1517,7 @@ async function doLogin(){
   if(localUser&&localUser.role!=='boss'){
     if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-    $('#authMsg').textContent='Loading…';
-    await syncOrRefreshSharedDb(ACTIVE_EST_ID);
-    const freshUser=(DB.users||[]).find(x=>(x.username&&x.username.toLowerCase()===inputLower)||(x.email&&x.email.toLowerCase()===inputLower))||localUser;
-    if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
-    if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-    SESSION=freshUser;$('#authMsg').textContent='';finalizeLogin();return;
+    SESSION=localUser;finalizeLogin();return;
   }
   // Email login → try Supabase (owner)
   if(isEmail&&USE_SUPABASE){
@@ -1716,22 +1536,16 @@ async function doLogin(){
         $('#authMsg').textContent='Loading\u2026';
         const ests=await sbLoadEstablishments();
         if(ests.length===0){
-          if(hasPendingSync('default')){ACTIVE_EST_ID='default';DB=load();await syncOrRefreshSharedDb('default');}
-          else{
-            const remote=await sbLoad('default');
-            if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey('default'),JSON.stringify(DB));}
-          }
+          const remote=await sbLoad('default');
+          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey('default'),JSON.stringify(DB));}
           let boss=DB.users.find(x=>x.role==='boss');
           if(!boss){boss={id:'boss',name:'Owner',username:input_,pass,role:'boss',email:input_};DB.users.push(boss);}
           else{boss.email=input_;boss.pass=pass;}
           save();SESSION=boss;$('#authMsg').textContent='';finalizeLogin();
         }else{
           const firstId=ests[0].id;ACTIVE_EST_ID=firstId;
-          if(hasPendingSync(firstId)){DB=load();await syncOrRefreshSharedDb(firstId);}
-          else{
-            const remote=await sbLoad(firstId);
-            if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
-          }
+          const remote=await sbLoad(firstId);
+          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
           let boss=DB.users.find(x=>x.role==='boss')||{id:'boss',name:'Owner',username:input_,role:'boss'};
           boss.email=input_;boss.pass=pass;
           if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
@@ -1748,17 +1562,11 @@ async function doLogin(){
   const user=DB.users.find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u));
   if(!user||user.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-  if(user.role==='boss'){SESSION=user;renderEstPicker(user);return;}
-  $('#authMsg').textContent='Loading…';
-  await syncOrRefreshSharedDb(ACTIVE_EST_ID);
-  const freshUser=(DB.users||[]).find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u))||user;
-  if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
-  if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
-  SESSION=freshUser;$('#authMsg').textContent='';
+  SESSION=user;
+  if(user.role==='boss'){renderEstPicker(user);return;}
   finalizeLogin();
 }
-function logout(autoTimedOut){
-  stopIdleLogoutTimer();
+function logout(){
   SESSION=null;
   try{sessionStorage.removeItem('stockline_session');}catch(e){}
   unsubscribeRealtime();
@@ -1768,26 +1576,8 @@ function logout(autoTimedOut){
   $('#auth').style.display='flex';
   $('#loginPass').value='';
   $('#loginEmail').value='';
-  $('#authMsg').textContent=autoTimedOut?'Signed out after 30 minutes of inactivity.':'';
 }
 
-const IDLE_LOGOUT_MS=30*60*1000;
-let idleLogoutTimer=null;
-function stopIdleLogoutTimer(){
-  if(idleLogoutTimer){clearTimeout(idleLogoutTimer);idleLogoutTimer=null;}
-}
-function resetIdleLogoutTimer(){
-  stopIdleLogoutTimer();
-  if(!SESSION)return;
-  idleLogoutTimer=setTimeout(()=>{
-    if(SESSION)logout(true);
-  },IDLE_LOGOUT_MS);
-}
-['click','keydown','input','scroll','touchstart','mousemove'].forEach(evt=>{
-  document.addEventListener(evt,()=>{if(SESSION)resetIdleLogoutTimer();},{passive:true});
-});
-window.addEventListener('online',()=>{updateSyncDot();if(SESSION)retryPendingSync(true);});
-window.addEventListener('offline',()=>{updateSyncDot();if(SESSION)toast('Offline mode - changes will sync when internet is back.','good');});
 function showLoginGreeting(){
   const messages=[
     // sarcastic
@@ -1826,43 +1616,20 @@ applyBrand();renderQuickRoles();
   try{
     const saved=sessionStorage.getItem('stockline_session');
     if(saved){
-      const savedState=JSON.parse(saved);
-      const{id,estId,page}=savedState;
+      const{id,estId,page}=JSON.parse(saved);
       if(estId&&estId!==ACTIVE_EST_ID){ACTIVE_EST_ID=estId;DB=load();}
       const user=DB.users.find(x=>x.id===id);
       if(user){
         SESSION=user;
         const systems=DB.systems||[];
         SCOPE=user.role==='boss'?(systems[0]?.id||'kitchen'):(user.scope||'kitchen');
-        applySessionState(savedState);
-        if(!savedState.page)CURRENT=page||'stocks';
         applyBrand();
         $('#auth').style.display='none';$('#app').style.display='block';
         if(user.role==='boss')subscribeRealtime();
+        CURRENT=page||'stocks';
         buildNav();renderBell();
-        resetIdleLogoutTimer();
         setTimeout(()=>render(),50);
         checkCutoffs();
-        if(USE_SUPABASE){
-          syncOrRefreshSharedDb(ACTIVE_EST_ID).then(ok=>{
-            if(!ok||!SESSION)return;
-            const fresh=DB.users.find(x=>x.id===id);
-            if(fresh)SESSION=fresh;
-            applySessionState(savedState);
-            const systemsNow=DB.systems||[];
-            const branchesNow=DB.branches||[];
-            if(SESSION.role==='boss'){
-              if(!BRANCH_TAB||!branchesNow.find(b=>b.id===BRANCH_TAB))BRANCH_TAB=branchesNow[0]?.id||null;
-              const branchSystems=systemsNow.filter(s=>(s.branchId||'branch_1')===BRANCH_TAB);
-              if(!branchSystems.find(s=>s.id===SCOPE))SCOPE=branchSystems[0]?.id||systemsNow[0]?.id||'';
-            }else{
-              if(!systemsNow.find(s=>s.id===SCOPE))SCOPE=SESSION.scope||systemsNow[0]?.id||'';
-              BRANCH_TAB=SESSION.branchId||(systemsNow.find(s=>s.id===SCOPE)?.branchId)||BRANCH_TAB;
-            }
-            saveSessionState();
-            applyBrand();buildNav();renderBell();render();
-          }).catch(e=>console.warn('Session refresh failed:',e));
-        }
       }
     }
   }catch(e){}
@@ -1936,11 +1703,10 @@ function switchBranchInPlace(branchId){
   CURRENT='stocks';
   STOCKS_SUBTAB='stocks';
   STOCKS_CAT='';
-  saveSessionState();
+  try{sessionStorage.setItem('stockline_session',JSON.stringify({id:SESSION.id,estId:ACTIVE_EST_ID,page:CURRENT,branchId:BRANCH_TAB,scope:SCOPE}));}catch(e){}
   buildNav();
   renderBell();
   render();
-  resetIdleLogoutTimer();
   toast('Switched to '+branch.label,'good');
 }
 function branchSwitchModal(){
@@ -2200,40 +1966,6 @@ function field(label,inputEl,hint){
 }
 function input(val,ph,type){const i=el('input');i.value=val??'';if(ph)i.placeholder=ph;if(type)i.type=type;return i;}
 function selectEl(opts,val){const s=el('select');opts.forEach(o=>{const op=el('option',null,esc(o.label));op.value=o.value;if(o.value===val)op.selected=true;s.appendChild(op);});return s;}
-function isShown(el){
-  if(!el)return false;
-  const st=getComputedStyle(el);
-  return st.display!=='none'&&st.visibility!=='hidden'&&st.opacity!=='0';
-}
-function clickEnterAction(btn,e){
-  if(!btn||btn.disabled)return false;
-  e.preventDefault();
-  btn.click();
-  return true;
-}
-document.addEventListener('keydown',e=>{
-  if(e.key!=='Enter'||e.shiftKey||e.ctrlKey||e.altKey||e.metaKey)return;
-  const target=e.target;
-  const tag=(target&&target.tagName)||'';
-  if(tag==='TEXTAREA'||(target&&target.isContentEditable))return;
-  if(tag==='BUTTON')return;
-  if(target&&target.placeholder&&/^search/i.test(target.placeholder.trim()))return;
-
-  if(isShown($('#modalScrim'))&&$('#modalScrim').classList.contains('show')){
-    const modal=$('#modal');
-    const primary=modal.querySelector('.modal-foot .btn.brass:not([disabled]), .modal-foot .btn.danger:not([disabled])');
-    if(clickEnterAction(primary,e))return;
-  }
-  if(isShown($('#register'))&&clickEnterAction($('#regBtn'),e))return;
-  if(isShown($('#forgotPassword'))&&clickEnterAction($('#fpBtn'),e))return;
-  if(isShown($('#auth'))&&clickEnterAction($('#loginBtn'),e))return;
-
-  const panel=target&&target.closest?target.closest('.card,.auth-card,.modal-body,.field'):null;
-  if(panel){
-    const btn=panel.querySelector('.btn.brass:not([disabled]), .btn.danger:not([disabled])');
-    if(clickEnterAction(btn,e))return;
-  }
-});
 
 /* ---------- ROUTER ---------- */
 // Returns only the systems visible to the current user (branch-locked)
@@ -2267,11 +1999,11 @@ function render(){
   // Keep topbar in sync with current branch
   applyBrand();
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
-  // save current page/sub-tabs to session so refresh restores the exact view
-  saveSessionState();
+  // save current page to session so refresh restores it
+  try{const s=sessionStorage.getItem('stockline_session');if(s){const d=JSON.parse(s);d.page=CURRENT;sessionStorage.setItem('stockline_session',JSON.stringify(d));}}catch(e){}
   const routes={
-    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,
-    usage:pageUsage,temps:pageTemps,temperature:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
+    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,
+    usage:pageUsage,temps:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
   main.innerHTML='';
@@ -4824,8 +4556,8 @@ function settingsAppearance(main){
   const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
   document.body.appendChild(up);
   const upBtn=el('button','btn ghost sm','Upload image');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
-  const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=b.appName.slice(0,2).toUpperCase();saveAndWait('Logo removed').then(ok=>{if(ok)applyBrand();});};
-  up.onchange=()=>{const f=up.files[0];if(!f)return;imageFileToLogoData(f,data=>{b.logo=data;prev.innerHTML=`<img src="${b.logo}">`;saveAndWait('Logo updated').then(ok=>{if(ok)applyBrand();});});};
+  const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=b.appName.slice(0,2).toUpperCase();save();applyBrand();};
+  up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{b.logo=r.result;prev.innerHTML=`<img src="${b.logo}">`;save();applyBrand();toast('Logo updated','good');};r.readAsDataURL(f);};
   const lbtns=el('div');lbtns.style.display='flex';lbtns.style.gap='8px';lbtns.appendChild(upBtn);lbtns.appendChild(clrBtn);
   lrow.appendChild(prev);lrow.appendChild(lbtns);lf.appendChild(lrow);c.appendChild(lf);
   // accent colour
@@ -4856,7 +4588,7 @@ function settingsAppearance(main){
   });
   tf.appendChild(tfRow);c.appendChild(tf);
   const aSave=el('button','btn brass','Save name');aSave.style.marginTop='8px';
-  aSave.onclick=()=>{b.appName=appNameI.value.trim()||'Stored';save();applyBrand();toast('Saved','good');};
+  aSave.onclick=()=>{b.appName=appNameI.value.trim()||'StockLine';save();applyBrand();toast('Saved','good');};
   c.appendChild(aSave);main.appendChild(c);
 }
 
@@ -4872,27 +4604,22 @@ function settingsSystems(main){
     DB.branches.unshift({id:'branch_1',label:mn,short:(mn.slice(0,3)||'MAI').toUpperCase()});
   }
   if(systems)systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
-  // This settings page edits only the branch the user is currently inside.
-  const allBranches=DB.branches||[];
+  // In-charge only sees their own branch
   const inchargeBranchId=isIncharge?(SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1'):null;
-  if(isBoss&&(!BRANCH_TAB||!allBranches.find(b=>b.id===BRANCH_TAB))){
-    const scopeBranch=systems.find(s=>s.id===SCOPE)?.branchId;
-    BRANCH_TAB=allBranches.find(b=>b.id===scopeBranch)?.id||allBranches[0]?.id||null;
-  }
-  const visibleBranchId=isBoss?BRANCH_TAB:inchargeBranchId;
-  const branches=allBranches.filter(b=>b.id===visibleBranchId);
+  const branches=isBoss?DB.branches:(DB.branches||[]).filter(b=>b.id===inchargeBranchId);
 
+  // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
   if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
     BRANCH_TAB=branches[0]?.id||null;
   }
 
-  // ?? Top bar: current branch label + Add branch button ?????????????????
+  // ── Top bar: branch sub-tabs + Add branch button ──────────────────────
   const topBar=el('div','flex-between no-filter');topBar.style.marginBottom='14px';
 
   const subTabs=el('div','seg');subTabs.style.flexWrap='wrap';subTabs.style.gap='6px';
   branches.forEach(b=>{
-    const btn=el('button','on',b.label);
-    btn.disabled=true;
+    const btn=el('button',BRANCH_TAB===b.id?'on':'',b.label);
+    btn.onclick=()=>{BRANCH_TAB=b.id;render();};
     subTabs.appendChild(btn);
   });
   topBar.appendChild(subTabs);
@@ -4975,7 +4702,7 @@ function settingsSystems(main){
       save();applyBrand();toast('Saved','good');
     };
     detRow.appendChild(saveDetBtn);
-    if((DB.branches||[]).length>1){
+    if(branches.length>1){
       const _bid=branch.id;const _blabel=branch.label;
       const delBranch=el('button','btn ghost tiny','Delete branch');
       delBranch.style.color='var(--bad)';
@@ -5001,8 +4728,11 @@ function settingsSystems(main){
               DB.branches=(DB.branches||[]).filter(b=>b.id!==_bid);
               if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
               BRANCH_TAB=DB.branches[0]?.id||null;
-              save();
-              setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},USE_SUPABASE?1000:500);
+              localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+              if(USE_SUPABASE&&SUPABASE_USER){
+                sbSave().then(()=>{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);})
+                .catch(()=>{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);});
+              }else{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},500);}
               buildNav();render();toast(_blabel+' deleted','good');
             },
             ()=>{SUPPRESS_REALTIME=false;subscribeRealtime();}
@@ -5170,19 +4900,6 @@ function settingsSystems(main){
   }
   card.appendChild(teamDiv);
 
-  // Branch logo/photo - owner and in-charge can update their branch.
-  const branchLogoDiv=el('div');branchLogoDiv.style.cssText='margin-top:18px;border-top:1px solid var(--line);padding-top:14px';
-  branchLogoDiv.innerHTML='<b style="font-size:14px;display:block;margin-bottom:12px">Branch logo</b>';
-  const logoRow=el('div');logoRow.style.cssText='display:flex;gap:14px;align-items:center;flex-wrap:wrap';
-  const logoPrev=el('div','logo-preview');logoPrev.innerHTML=branch.logo?'<img src="'+branch.logo+'">':(branch.short||branch.label||'BR').slice(0,2).toUpperCase();
-  const branchUp=el('input');branchUp.type='file';branchUp.accept='image/*';branchUp.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
-  document.body.appendChild(branchUp);
-  const branchUpBtn=el('button','btn ghost sm','Upload photo');branchUpBtn.onclick=(e)=>{e.preventDefault();branchUp.value='';branchUp.click();};
-  const branchClrBtn=el('button','btn ghost sm','Remove');branchClrBtn.onclick=()=>{branch.logo='';logoPrev.innerHTML=(branch.short||branch.label||'BR').slice(0,2).toUpperCase();saveAndWait('Branch logo removed').then(ok=>{if(ok)applyBrand();});};
-  branchUp.onchange=()=>{const f=branchUp.files[0];if(!f)return;imageFileToLogoData(f,data=>{branch.logo=data;logoPrev.innerHTML='<img src="'+branch.logo+'">';saveAndWait('Branch logo updated').then(ok=>{if(ok)applyBrand();});});};
-  const branchBtns=el('div');branchBtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';branchBtns.appendChild(branchUpBtn);branchBtns.appendChild(branchClrBtn);
-  logoRow.appendChild(logoPrev);logoRow.appendChild(branchBtns);branchLogoDiv.appendChild(logoRow);
-  card.appendChild(branchLogoDiv);
   // Appearance section inside branch
   if(isBoss){
     const appDiv=el('div');appDiv.style.cssText='margin-top:18px;border-top:1px solid var(--line);padding-top:14px';
@@ -5197,6 +4914,12 @@ function settingsSystems(main){
       sw.appendChild(s);
     });
     af.appendChild(sw);appDiv.appendChild(af);
+    // app name
+    const appNameI=input(b.appName||'StockLine','App / brand name');
+    appDiv.appendChild(field('App name',appNameI));
+    const aSave=el('button','btn brass sm','Save');aSave.style.marginTop='8px';
+    aSave.onclick=()=>{b.appName=appNameI.value.trim()||'StockLine';save();applyBrand();toast('Saved','good');};
+    appDiv.appendChild(aSave);
     card.appendChild(appDiv);
   }
 
@@ -5256,26 +4979,6 @@ function settingsData(main){
   ver.innerHTML=`<div class="flex-between"><div><b>App version</b><div class="suptag">StockLine v${APP_VERSION}</div></div><span class="chip ok" style="font-size:11px">Up to date</span></div>`;
   const isBoss=SESSION.role==='boss';
   main.appendChild(ver);
-  if(isBoss){
-    const b=DB.brand||(DB.brand={appName:'Stored',logo:'',accent:'#b5862f'});
-    const brandCard=el('div','card pad');brandCard.style.marginBottom='14px';
-    brandCard.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">Business branding</div>';
-    const appNameI=input(b.appName||'Stored','Stored');
-    brandCard.appendChild(field('Stored with the logo',appNameI,'This is the app/business name shown with the business logo.'));
-    const lf=el('div','field');lf.appendChild(el('label',null,'Business photo / logo'));
-    const lrow=el('div');lrow.style.cssText='display:flex;gap:14px;align-items:center;flex-wrap:wrap';
-    const prev=el('div','logo-preview');prev.innerHTML=b.logo?'<img src="'+b.logo+'">':(appNameI.value||'Stored').slice(0,2).toUpperCase();
-    const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
-    document.body.appendChild(up);
-    const upBtn=el('button','btn ghost sm','Upload photo');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
-    const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=(appNameI.value||'Stored').slice(0,2).toUpperCase();saveAndWait('Business logo removed').then(ok=>{if(ok)applyBrand();});};
-    up.onchange=()=>{const f=up.files[0];if(!f)return;imageFileToLogoData(f,data=>{b.logo=data;prev.innerHTML='<img src="'+b.logo+'">';saveAndWait('Business logo updated').then(ok=>{if(ok)applyBrand();});});};
-    const lbtns=el('div');lbtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';lbtns.appendChild(upBtn);lbtns.appendChild(clrBtn);
-    lrow.appendChild(prev);lrow.appendChild(lbtns);lf.appendChild(lrow);brandCard.appendChild(lf);
-    const saveBrand=el('button','btn brass sm','Save branding');saveBrand.onclick=()=>{b.appName=appNameI.value.trim()||'Stored';save();applyBrand();toast('Business branding saved','good');};
-    brandCard.appendChild(saveBrand);
-    main.appendChild(brandCard);
-  }
   const dz=el('div','card pad');
   dz.innerHTML=`<div class="suptag" style="margin-bottom:12px">${USE_SUPABASE?'Data syncs to the cloud and is cached on this device.':'All data is stored on this device.'} Export a backup at any time. Only the owner can import one.</div>`;
   const exp=el('button','btn ghost sm','Export backup (JSON)');exp.onclick=exportData;dz.appendChild(exp);
@@ -5320,7 +5023,7 @@ function peekWrap(inp){
 }
 function exportData(){
   const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
-  const a=el('a');a.href=URL.createObjectURL(blob);a.download=(DB.brand.appName||'stored')+'-backup.json';a.click();
+  const a=el('a');a.href=URL.createObjectURL(blob);a.download=(DB.brand.appName||'stockline')+'-backup.json';a.click();
   toast('Backup downloaded','good');
 }
 
@@ -5400,33 +5103,26 @@ async function checkPendingRequests(){
   }catch(e){}
 }
 setInterval(()=>{checkPendingRequests();},30*1000);
+
+/* ---------- PWA: service worker registration ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/sw.js').catch(e=>console.warn('SW registration failed:',e));
+  });
+}
+// Re-sync to Supabase when connection returns
+window.addEventListener('online',()=>{
+  if(SESSION&&USE_SUPABASE&&SUPABASE_USER){
+    try{sbSave();toast('Back online — synced','good');}catch(e){}
+  }
+});
+window.addEventListener('offline',()=>{
+  if(SESSION)toast('Offline — changes saved locally','warn');
+});
+
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
