@@ -1750,7 +1750,6 @@ function branchSwitchModal(){
   if(!SESSION||SESSION.role!=='boss')return;
   const branches=DB.branches||[];
   if(branches.length<=1){toast('Only one branch available');return;}
-  closeNav();
   const body=el('div');
   const active=currentBranch();
   branches.forEach(branch=>{
