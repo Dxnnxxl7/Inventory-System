@@ -240,8 +240,15 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .main{flex:1;min-width:0;width:100%;padding:22px;max-width:1080px;background:#ffffff;overflow-x:hidden}
 .scrim{display:none;position:fixed;inset:0;background:rgba(20,17,13,.4);z-index:25}
 
-.sticky-bar{position:sticky;top:0;z-index:15;background:#fff;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--line)}
+.sticky-bar{position:sticky;top:61px;z-index:15;background:#fff;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .sticky-bar .seg{margin-bottom:0}
+.stock-summary-compact.card.pad{padding:12px 14px;margin-bottom:10px}
+.stock-summary-compact > div:first-child{margin-bottom:8px!important}
+.stock-summary-compact .stat-row{margin-bottom:6px}
+.stock-summary-compact .stat-row .card.stat{padding:5px 10px}
+.stock-summary-compact .stat .v{font-size:16px!important}
+.stock-summary-compact .stock-legend{padding:6px 0 0!important}
+.stock-controls{padding-top:8px}
 .page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
 .page-head .eyebrow{font-family:'Avenir Next',sans-serif;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass-deep);margin-bottom:2px}
 .page-head h2{font-size:20px;margin:0}
@@ -2392,7 +2399,7 @@ function scopeSummaryCard(scope,hideLink){
   card.appendChild(statRow);
 
   // row color legend
-  const legend=el('div');legend.style.cssText='display:flex;gap:10px;flex-wrap:wrap;padding:8px 0 2px;border-top:1px solid var(--line);';
+  const legend=el('div','stock-legend');legend.style.cssText='display:flex;gap:10px;flex-wrap:wrap;padding:8px 0 2px;border-top:1px solid var(--line);';
   [
     {color:'#e8f5e9',label:'In stock'},
     {color:'#fef6e0',label:'Low'},
@@ -2433,27 +2440,26 @@ function supplierCutoffCard(scope){
 function canEditStock(){return SESSION.role==='boss'||SESSION.role==='incharge';}
 function pageStocks(main){
   const scope=activeScope();
-  main.appendChild(headEl('','Stocks'));
-
-  // --- sticky bar: scope tabs + summary + sub-tabs + search + add + category pills ---
-  const bar=el('div','sticky-bar');
 
   // scope tabs — only systems in current branch, hidden if only 1
   const branchId=BRANCH_TAB||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
   const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
   if(SESSION.role==='boss'&&branchSystems.length>1){
-    const stRow=el('div','seg no-filter');stRow.style.marginBottom='8px';
+    const stRow=el('div','seg no-filter');stRow.style.marginBottom='10px';
     branchSystems.forEach(s=>{
       const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));
       b.onclick=()=>{SCOPE=s.id;STOCKS_SUBTAB='stocks';STOCKS_CAT='';buildNav();render();};
       stRow.appendChild(b);
     });
-    bar.appendChild(stRow);
+    main.appendChild(stRow);
   }
 
   // summary card inline (compact)
-  const sum=scopeSummaryCard(scope,true);sum.classList.add('no-filter');sum.style.marginBottom='8px';
-  bar.appendChild(sum);
+  const sum=scopeSummaryCard(scope,true);sum.classList.add('no-filter','stock-summary-compact');
+  main.appendChild(sum);
+
+  // --- sticky controls: sub-tabs + search + add + category pills ---
+  const bar=el('div','sticky-bar stock-controls');
 
   // sub-tabs
   const expiringCount=expiringBatches(scope).length;
