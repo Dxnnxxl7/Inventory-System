@@ -45,11 +45,12 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 
 /* ---------- LANDING ---------- */
 #landing{
-  min-height:100vh;background:#fbfaf6;color:var(--ink);overflow-x:hidden;
+  min-height:100vh;background:#fbfaf6;color:var(--ink);overflow-x:hidden;width:100%;
 }
+#landing *{max-width:100%}
 .land-top{
   position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:16px;
-  padding:16px 28px;background:rgba(251,250,246,.92);backdrop-filter:blur(12px);border-bottom:1px solid rgba(227,218,200,.75);
+  width:100%;padding:16px 28px;background:rgba(251,250,246,.92);backdrop-filter:blur(12px);border-bottom:1px solid rgba(227,218,200,.75);
 }
 .land-brand{display:flex;align-items:center;gap:12px;min-width:0}
 .land-logo{width:44px;height:38px;flex:none}
@@ -57,10 +58,11 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .land-brand span{display:block;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:11px;letter-spacing:.03em;color:var(--muted);white-space:normal;line-height:1.25;max-width:260px}
 .land-actions{display:flex;align-items:center;gap:10px;flex:none}
 .land-hero{
-  min-height:calc(100vh - 74px);display:grid;grid-template-columns:minmax(0,.9fr) minmax(320px,1.1fr);
+  width:100%;min-height:calc(100vh - 74px);display:grid;grid-template-columns:minmax(0,.9fr) minmax(320px,1.1fr);
   align-items:center;gap:34px;padding:54px 28px 34px;max-width:1180px;margin:0 auto;
 }
-.land-copy h1{font-size:clamp(44px,7vw,82px);line-height:.94;max-width:720px;letter-spacing:0}
+.land-copy{min-width:0}
+.land-copy h1{font-size:72px;line-height:.94;max-width:720px;letter-spacing:0}
 .land-copy p{font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:18px;line-height:1.6;color:var(--muted);max-width:560px;margin:24px 0}
 .land-ctas{display:flex;gap:12px;flex-wrap:wrap;margin:24px 0 28px}
 .land-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:620px}
@@ -68,7 +70,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .land-point b{display:block;color:var(--ink);font-size:14px;margin-bottom:2px}
 .product-shot{
   position:relative;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 18px 60px rgba(20,17,13,.14);
-  padding:16px;overflow:hidden;min-height:520px;
+  width:100%;min-width:0;padding:16px;overflow:hidden;min-height:520px;
 }
 .shot-bar{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}
 .shot-logo{width:34px;height:34px;border-radius:9px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:'Avenir Next',sans-serif;font-weight:800}
@@ -98,17 +100,31 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
   .product-shot{min-height:460px}
 }
 @media(max-width:520px){
-  .land-top{padding:12px 14px}
+  .land-top{padding:10px 12px;gap:8px;align-items:center}
+  .land-logo{width:34px;height:30px}
+  .land-brand{gap:8px;flex:1}
   .land-brand b{font-size:19px}
-  .land-brand span{font-size:10px;max-width:160px}
+  .land-brand span{font-size:10px;max-width:132px}
   .land-actions .btn.ghost{display:none}
-  .land-hero{padding:28px 14px 24px;gap:24px}
-  .land-copy h1{font-size:44px}
+  .land-actions .btn.brass{padding:8px 10px;font-size:12px;white-space:nowrap}
+  .land-hero{display:block;min-height:auto;padding:24px 12px 22px}
+  .land-copy h1{font-size:40px;line-height:.98}
   .land-copy p{font-size:16px}
+  .land-ctas .btn{width:100%;justify-content:center}
   .land-points{grid-template-columns:1fr}
-  .product-shot{min-height:430px;padding:12px}
+  .product-shot{margin-top:22px;min-height:0;padding:12px;border-radius:14px;box-shadow:0 10px 28px rgba(20,17,13,.1)}
+  .shot-title div{font-size:11px;line-height:1.25}
+  .shot-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .shot-tabs span{flex:none}
+  .shot-card{padding:14px}
   .shot-grid{grid-template-columns:repeat(2,1fr)}
+  .shot-stat{padding:10px}
+  .shot-stat b{font-size:22px}
   .shot-phone{display:none}
+}
+@media(max-width:360px){
+  .land-brand span{display:none}
+  .land-copy h1{font-size:36px}
 }
 
 /* ---------- AUTH ---------- */
