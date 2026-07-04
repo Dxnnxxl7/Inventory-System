@@ -622,7 +622,7 @@ function seed(){
   ];
   return {
     venue:{name:'The Copper Table',address:'18 Granary Row, London E1 6QL',location:'Ground floor + cellar',area:'Spitalfields'},
-    brand:{appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'},
+    brand:{appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'},
     systems:[{id:'kitchen',label:'System 1',short:'SYS1',branchId:'branch_1'},{id:'restaurant',label:'System 2',short:'SYS2',branchId:'branch_1'}], // active branch systems
     branches:[{id:'branch_1',label:'Main Branch',short:'MAIN'}],
     users:[
@@ -669,11 +669,11 @@ function load(){
       }
       // ensure all top-level fields exist
       if(!d.venue)d.venue={name:'',address:'',location:'',area:''};
-      if(!d.brand)d.brand={appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
+      if(!d.brand)d.brand={appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
       if(!d.brand.dateFormat)d.brand.dateFormat='DD/MM/YYYY';
       if(!d.brand.timeFormat)d.brand.timeFormat='24';
       if(!d.brand.accent)d.brand.accent='#b5862f';
-      if(!d.brand.appName)d.brand.appName='StockLine';
+      if(!d.brand.appName)d.brand.appName='Stored';
       if(!d.brand.kitchenLabel)d.brand.kitchenLabel='System 1';
       if(!d.brand.restaurantLabel)d.brand.restaurantLabel='System 2';
       if(!d.brand.kitchenShort)d.brand.kitchenShort='SYS1';
@@ -952,19 +952,20 @@ function storeChip(store,scope){
 
 /* ---------- AUTH ---------- */
 function applyBrand(){
-  const b=(DB&&DB.brand)?DB.brand:{appName:'StockLine',logo:'',accent:'#b5862f'};
-  const bizName=DB?.venue?.name||b.appName||'StockLine';
+  const b=(DB&&DB.brand)?DB.brand:{appName:'Stored',logo:'',accent:'#b5862f'};
+  const bizName=DB?.venue?.name||b.appName||'Stored';
   document.documentElement.style.setProperty('--brass',b.accent||'#b5862f');
+  const currentBranch=(DB?.branches||[]).find(br=>br.id===BRANCH_TAB)||(DB?.branches||[])[0];
+  const branchLabel=currentBranch?.label||DB?.venue?.name||'—';
   const initials=bizName.slice(0,2).toUpperCase();
-  const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:initials;
-  const al=$('#authLogo');if(al)al.innerHTML=logoHTML;
-  const tl=$('#tbLogo');if(tl)tl.innerHTML=logoHTML;
+  const branchInitials=(branchLabel||bizName).slice(0,2).toUpperCase();
+  const businessLogoHTML=b.logo?`<img src="${b.logo}" alt="">`:initials;
+  const topLogoHTML=currentBranch?.logo?`<img src="${currentBranch.logo}" alt="">`:businessLogoHTML||branchInitials;
+  const al=$('#authLogo');if(al)al.innerHTML=businessLogoHTML;
+  const tl=$('#tbLogo');if(tl)tl.innerHTML=topLogoHTML;
   const ab=$('#authBrand');if(ab)ab.textContent=bizName;
   // Top left: business name (large) + current branch name (small below)
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
-  // Get current branch label
-  const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
-  const branchLabel=currentBranch?.label||DB?.venue?.name||'—';
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
   const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
@@ -1432,11 +1433,11 @@ async function sbSwitchTo(estId){
 // Migrate legacy data structure
 function migrateLegacy(d){
   if(!d.venue)d.venue={name:'',address:'',location:'',area:''};
-  if(!d.brand)d.brand={appName:'StockLine',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
+  if(!d.brand)d.brand={appName:'Stored',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'System 1',restaurantLabel:'System 2',kitchenShort:'SYS1',restaurantShort:'SYS2'};
   if(!d.brand.dateFormat)d.brand.dateFormat='DD/MM/YYYY';
   if(!d.brand.timeFormat)d.brand.timeFormat='24';
   if(!d.brand.accent)d.brand.accent='#b5862f';
-  if(!d.brand.appName)d.brand.appName='StockLine';
+  if(!d.brand.appName)d.brand.appName='Stored';
   if(!d.brand.kitchenLabel)d.brand.kitchenLabel='System 1';
   if(!d.brand.restaurantLabel)d.brand.restaurantLabel='System 2';
   if(!d.brand.kitchenShort)d.brand.kitchenShort='SYS1';
@@ -4668,7 +4669,7 @@ function settingsAppearance(main){
   });
   tf.appendChild(tfRow);c.appendChild(tf);
   const aSave=el('button','btn brass','Save name');aSave.style.marginTop='8px';
-  aSave.onclick=()=>{b.appName=appNameI.value.trim()||'StockLine';save();applyBrand();toast('Saved','good');};
+  aSave.onclick=()=>{b.appName=appNameI.value.trim()||'Stored';save();applyBrand();toast('Saved','good');};
   c.appendChild(aSave);main.appendChild(c);
 }
 
@@ -4980,6 +4981,19 @@ function settingsSystems(main){
   }
   card.appendChild(teamDiv);
 
+  // Branch logo/photo - owner and in-charge can update their branch.
+  const branchLogoDiv=el('div');branchLogoDiv.style.cssText='margin-top:18px;border-top:1px solid var(--line);padding-top:14px';
+  branchLogoDiv.innerHTML='<b style="font-size:14px;display:block;margin-bottom:12px">Branch logo</b>';
+  const logoRow=el('div');logoRow.style.cssText='display:flex;gap:14px;align-items:center;flex-wrap:wrap';
+  const logoPrev=el('div','logo-preview');logoPrev.innerHTML=branch.logo?'<img src="'+branch.logo+'">':(branch.short||branch.label||'BR').slice(0,2).toUpperCase();
+  const branchUp=el('input');branchUp.type='file';branchUp.accept='image/*';branchUp.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
+  document.body.appendChild(branchUp);
+  const branchUpBtn=el('button','btn ghost sm','Upload photo');branchUpBtn.onclick=(e)=>{e.preventDefault();branchUp.value='';branchUp.click();};
+  const branchClrBtn=el('button','btn ghost sm','Remove');branchClrBtn.onclick=()=>{branch.logo='';logoPrev.innerHTML=(branch.short||branch.label||'BR').slice(0,2).toUpperCase();save();applyBrand();toast('Branch logo removed','good');};
+  branchUp.onchange=()=>{const f=branchUp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{branch.logo=r.result;logoPrev.innerHTML='<img src="'+branch.logo+'">';save();applyBrand();toast('Branch logo updated','good');};r.readAsDataURL(f);};
+  const branchBtns=el('div');branchBtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';branchBtns.appendChild(branchUpBtn);branchBtns.appendChild(branchClrBtn);
+  logoRow.appendChild(logoPrev);logoRow.appendChild(branchBtns);branchLogoDiv.appendChild(logoRow);
+  card.appendChild(branchLogoDiv);
   // Appearance section inside branch
   if(isBoss){
     const appDiv=el('div');appDiv.style.cssText='margin-top:18px;border-top:1px solid var(--line);padding-top:14px';
@@ -4994,12 +5008,6 @@ function settingsSystems(main){
       sw.appendChild(s);
     });
     af.appendChild(sw);appDiv.appendChild(af);
-    // app name
-    const appNameI=input(b.appName||'StockLine','App / brand name');
-    appDiv.appendChild(field('App name',appNameI));
-    const aSave=el('button','btn brass sm','Save');aSave.style.marginTop='8px';
-    aSave.onclick=()=>{b.appName=appNameI.value.trim()||'StockLine';save();applyBrand();toast('Saved','good');};
-    appDiv.appendChild(aSave);
     card.appendChild(appDiv);
   }
 
@@ -5059,6 +5067,26 @@ function settingsData(main){
   ver.innerHTML=`<div class="flex-between"><div><b>App version</b><div class="suptag">StockLine v${APP_VERSION}</div></div><span class="chip ok" style="font-size:11px">Up to date</span></div>`;
   const isBoss=SESSION.role==='boss';
   main.appendChild(ver);
+  if(isBoss){
+    const b=DB.brand||(DB.brand={appName:'Stored',logo:'',accent:'#b5862f'});
+    const brandCard=el('div','card pad');brandCard.style.marginBottom='14px';
+    brandCard.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">Business branding</div>';
+    const appNameI=input(b.appName||'Stored','Stored');
+    brandCard.appendChild(field('Stored with the logo',appNameI,'This is the app/business name shown with the business logo.'));
+    const lf=el('div','field');lf.appendChild(el('label',null,'Business photo / logo'));
+    const lrow=el('div');lrow.style.cssText='display:flex;gap:14px;align-items:center;flex-wrap:wrap';
+    const prev=el('div','logo-preview');prev.innerHTML=b.logo?'<img src="'+b.logo+'">':(appNameI.value||'Stored').slice(0,2).toUpperCase();
+    const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
+    document.body.appendChild(up);
+    const upBtn=el('button','btn ghost sm','Upload photo');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
+    const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{b.logo='';prev.innerHTML=(appNameI.value||'Stored').slice(0,2).toUpperCase();save();applyBrand();toast('Business logo removed','good');};
+    up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{b.logo=r.result;prev.innerHTML='<img src="'+b.logo+'">';save();applyBrand();toast('Business logo updated','good');};r.readAsDataURL(f);};
+    const lbtns=el('div');lbtns.style.cssText='display:flex;gap:8px;flex-wrap:wrap';lbtns.appendChild(upBtn);lbtns.appendChild(clrBtn);
+    lrow.appendChild(prev);lrow.appendChild(lbtns);lf.appendChild(lrow);brandCard.appendChild(lf);
+    const saveBrand=el('button','btn brass sm','Save branding');saveBrand.onclick=()=>{b.appName=appNameI.value.trim()||'Stored';save();applyBrand();toast('Business branding saved','good');};
+    brandCard.appendChild(saveBrand);
+    main.appendChild(brandCard);
+  }
   const dz=el('div','card pad');
   dz.innerHTML=`<div class="suptag" style="margin-bottom:12px">${USE_SUPABASE?'Data syncs to the cloud and is cached on this device.':'All data is stored on this device.'} Export a backup at any time. Only the owner can import one.</div>`;
   const exp=el('button','btn ghost sm','Export backup (JSON)');exp.onclick=exportData;dz.appendChild(exp);
@@ -5103,7 +5131,7 @@ function peekWrap(inp){
 }
 function exportData(){
   const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
-  const a=el('a');a.href=URL.createObjectURL(blob);a.download=(DB.brand.appName||'stockline')+'-backup.json';a.click();
+  const a=el('a');a.href=URL.createObjectURL(blob);a.download=(DB.brand.appName||'stored')+'-backup.json';a.click();
   toast('Backup downloaded','good');
 }
 
@@ -5186,6 +5214,10 @@ setInterval(()=>{checkPendingRequests();},30*1000);
 </script>
 </body>
 </html>
+
+
+
+
 
 
 
