@@ -277,9 +277,9 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .stat.clickable:hover{background:var(--paper);box-shadow:0 2px 10px rgba(20,17,13,.08)}
 
 /* tabs for scope inside a page */
-.scope-tabs{display:inline-flex;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;margin-bottom:16px;font-family:'Avenir Next',sans-serif}
-.scope-tabs button{padding:8px 15px;border-radius:8px;font-size:13.5px;font-weight:600;color:var(--muted)}
-.scope-tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.scope-tabs{display:flex;justify-content:flex-end;background:transparent;border:0;border-radius:0;padding:0;gap:6px;margin:0 0 8px auto;font-family:'Avenir Next',sans-serif}
+.scope-tabs button{padding:8px 12px;border-radius:9px;border:1px solid var(--line);font-size:13.5px;font-weight:700;color:var(--muted);background:#fff}
+.scope-tabs button.on{background:var(--ink);border-color:var(--ink);color:var(--paper);box-shadow:none}
 .scope-tabs button.on.kitchen{color:var(--boh)}
 .scope-tabs button.on.restaurant{color:var(--foh)}
 
@@ -397,6 +397,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .swatch.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ink)}
 .logo-preview{width:64px;height:64px;border-radius:14px;overflow:hidden;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;font-family:'Avenir Next',sans-serif}
 .logo-preview img{width:100%;height:100%;object-fit:cover}
+.branch-photo-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.branch-photo-row .logo-preview{width:58px;height:58px;font-size:22px}
 
 .suptag{font-family:'Avenir Next',sans-serif;font-size:11px;color:var(--muted)}
 .list-card{padding:15px 16px;border-bottom:1px solid var(--line)}
@@ -1130,14 +1132,15 @@ function applyBrand(){
   const bizName=/^(courallie pub|storedo)$/i.test(String(rawBizName).trim())?'Stored':rawBizName;
   document.documentElement.style.setProperty('--brass',b.accent||'#b5862f');
   const initials=bizName.slice(0,2).toUpperCase();
-  const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:(bizName==='Stored'?storedLogoMark():initials);
+  const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
+  const branchLogo=currentBranch?.logo||'';
+  const logoHTML=branchLogo?`<img src="${branchLogo}" alt="">`:(b.logo?`<img src="${b.logo}" alt="">`:(bizName==='Stored'?storedLogoMark():initials));
   const al=$('#authLogo');if(al)al.innerHTML=logoHTML;
   const tl=$('#tbLogo');if(tl)tl.innerHTML=logoHTML;
   const ab=$('#authBrand');if(ab)ab.textContent=bizName;
   // Top left: business name (large) + current branch name (small below)
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
   // Get current branch label
-  const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
   const rawBranchLabel=currentBranch?.label||DB?.venue?.name||'—';
   const branchLabel=/^(courallie pub|storedo)$/i.test(String(rawBranchLabel).trim())?'Stored':rawBranchLabel;
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
@@ -2223,21 +2226,23 @@ function selectEl(opts,val){const s=el('select');opts.forEach(o=>{const op=el('o
 // Returns only the systems visible to the current user (branch-locked)
 function visibleSystems(){
   const all=DB.systems||[];
-  if(SESSION.role==='boss'){
-    const bid=BRANCH_TAB||(all.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
+  if(SESSION.role==='boss'||SESSION.role==='incharge'){
+    const assignedBranch=SESSION.branchId||(all.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+    const bid=SESSION.role==='boss'?(BRANCH_TAB||(all.find(s=>s.id===SCOPE)?.branchId)||'branch_1'):assignedBranch;
     return all.filter(s=>(s.branchId||'branch_1')===bid);
   }
   return all.filter(s=>s.id===SESSION.scope);
 }
 function activeScope(){
   const systems=DB.systems||[];
-  if(SESSION.role==='boss'){
-    const branchId=BRANCH_TAB||(systems.find(s=>s.id===SCOPE)?.branchId)||'branch_1';
+  if(SESSION.role==='boss'||SESSION.role==='incharge'){
+    const assignedBranch=SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+    const branchId=SESSION.role==='boss'?(BRANCH_TAB||(systems.find(s=>s.id===SCOPE)?.branchId)||'branch_1'):assignedBranch;
     const branchSystems=systems.filter(s=>(s.branchId||'branch_1')===branchId);
     if(!branchSystems.find(s=>s.id===SCOPE)&&branchSystems.length)SCOPE=branchSystems[0].id;
     return SCOPE;
   }
-  // Staff/incharge: always locked to their assigned scope
+  // Staff: always locked to their assigned scope
   const sc=SESSION.scope;
   if(sc&&systems.find(s=>s.id===sc))return sc;
   return systems[0]?.id||SCOPE;
@@ -2266,9 +2271,9 @@ function render(){
 function scopeTabs(container,onChange){
   const allSystems=DB.systems||[];
   if(SESSION.role==='staff')return;
-  if(SESSION.role==='incharge')return;
-  // Boss: locked to systems in BRANCH_TAB only — no cross-branch visibility
-  const branchId=BRANCH_TAB||(allSystems.find(s=>s.id===SCOPE)?.branchId||'branch_1');
+  // Boss and in-charge: locked to systems in their current branch only.
+  const assignedBranch=SESSION.branchId||(allSystems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+  const branchId=SESSION.role==='boss'?(BRANCH_TAB||(allSystems.find(s=>s.id===SCOPE)?.branchId||'branch_1')):assignedBranch;
   const systems=allSystems.filter(s=>(s.branchId||'branch_1')===branchId);
   // Keep SCOPE within this branch
   if(!systems.find(s=>s.id===SCOPE)&&systems.length)SCOPE=systems[0].id;
@@ -2444,7 +2449,7 @@ function supplierCutoffCard(scope){
 }
 
 /* ---------- STOCKS ---------- */
-function canEditStock(){return SESSION.role==='boss'||SESSION.role==='incharge';}
+function canEditStock(){return SESSION.role==='boss'||(SESSION.role==='incharge'&&activeScope()===SESSION.scope);}
 function pageStocks(main){
   const scope=activeScope();
 
@@ -2452,7 +2457,7 @@ function pageStocks(main){
   const branchId=BRANCH_TAB||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
   const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
   let stRow=null;
-  if(SESSION.role==='boss'&&branchSystems.length>1){
+  if(SESSION.role!=='staff'&&branchSystems.length>1){
     stRow=el('div','seg no-filter');
     branchSystems.forEach(s=>{
       const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));
@@ -4376,7 +4381,7 @@ function pageTemps(main){
         else tr.innerHTML+='<td style="color:var(--muted)">—</td>';
       });
       tr.innerHTML+=`<td class="suptag">${esc(l.byName||'')}</td><td class="suptag">${esc(l.note||'')}</td>`;
-      if(isBoss||(isIncharge&&u.role==='staff')){
+      if(isBoss||isIncharge){
         const delTd=el('td');const delBtn=el('button','btn ghost tiny','Del');
         delBtn.onclick=()=>{DB.tempLogs=DB.tempLogs.filter(x=>x.id!==l.id);save();render();};
         delTd.appendChild(delBtn);tr.appendChild(delTd);
@@ -4402,7 +4407,7 @@ function pageCats(main){
   if(!scopes.includes(CATS_TAB))CATS_TAB=scopes[0];
 
   if(scopes.length>1){
-    const tabRow=el('div','seg no-filter');tabRow.style.marginBottom='16px';
+    const tabRow=el('div','scope-tabs no-filter');
     scopes.forEach(sc=>{
       const b=el('button',CATS_TAB===sc?'on':'',scopeLabel(sc));
       b.onclick=()=>{CATS_TAB=sc;render();};
@@ -4519,7 +4524,7 @@ function addUserModal(defaultBranchId){
   const nameI=input('','e.g. Sam Taylor');
   const userI=input('','e.g. samt');
   const passI=input('','At least 4 characters');const passWrap=peekWrap(passI);
-  const roleOptions=SESSION.role==='boss'?[{label:'Staff — view, log deliveries and usage',value:'staff'},{label:'In-charge — manage stock, categories, suppliers',value:'incharge'}]:[{label:'Staff — view, log deliveries and usage',value:'staff'}];
+  const roleOptions=[{label:'Staff — view, log deliveries and usage',value:'staff'},{label:'In-charge — manage stock, categories, suppliers',value:'incharge'}];
   const roleI=selectEl(roleOptions,'staff');
   const systems=DB.systems||[];
   const userBranchId=SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
@@ -4556,7 +4561,7 @@ function addUserModal(defaultBranchId){
     if(!username){err.textContent='Enter a username.';return;}
     if(DB.users.some(u=>String(u.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
     if(pass.length<4){err.textContent='Password needs at least 4 characters.';return;}
-    DB.users.push({id:uid(),name,username,pass,role:SESSION.role==='boss'?roleI.value:'staff',scope,branchId:branchI.value||defBranch});
+    DB.users.push({id:uid(),name,username,pass,role:roleI.value,scope,branchId:branchI.value||defBranch});
     save();renderQuickRoles();closeModal();render();toast(name+' added','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Add staff member',body,f);
@@ -4571,13 +4576,13 @@ function editStaffModal(u,defaultBranchId){
   const userBranchId=u.branchId||(systems.find(s=>s.id===u.scope)?.branchId)||defaultBranchId||'branch_1';
   const branches=SESSION.role==='boss'?(DB.branches||[{id:'branch_1',label:'Main Branch'}]):(DB.branches||[]).filter(b=>b.id===(SESSION.branchId||userBranchId));
   const branchI=selectEl(branches.map(b=>({label:b.label,value:b.id})),userBranchId);
-  const roleOptions=SESSION.role==='boss'?[{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}]:[{label:'Staff',value:'staff'}];
+  const roleOptions=[{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}];
   const roleI=selectEl(roleOptions,u.role||'staff');
   const sysWrap=el('div');
   function buildSysSelect(branchId){
     sysWrap.innerHTML='';
     const brSystems=systems.filter(s=>(s.branchId||'branch_1')===branchId);
-    const opts=SESSION.role==='boss'?(brSystems.length?brSystems:systems):brSystems.filter(s=>s.id===SESSION.scope);
+    const opts=brSystems.length?brSystems:systems;
     const sysI=selectEl(opts.map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||opts[0]?.id||'');
     sysWrap.appendChild(sysI);
   }
@@ -4956,11 +4961,38 @@ function settingsSystems(main){
   if(!branch){main.appendChild(el('div','suptag','No branches yet.'));return;}
   const branchSystems=systems.filter(s=>s.branchId===branch.id);
 
+  if(isBoss){
+    const bizCard=el('div','card pad');bizCard.style.marginBottom='12px';
+    const bizI=input(DB.venue?.name||DB.brand?.appName||'','Business name');
+    bizCard.appendChild(field('Business name',bizI,'Shown at the top of the app for the owner account.'));
+    const bizErr=el('div','err');bizCard.appendChild(bizErr);
+    const bizSave=el('button','btn brass sm','Save business name');
+    bizSave.onclick=()=>{
+      const n=bizI.value.trim();
+      if(!n){bizErr.textContent='Business name required.';return;}
+      DB.venue=DB.venue||{};DB.brand=DB.brand||{};
+      DB.venue.name=n;DB.brand.appName=n;
+      save();applyBrand();buildNav();bizErr.textContent='';toast('Business name updated','good');
+    };
+    bizCard.appendChild(bizSave);
+    main.appendChild(bizCard);
+  }
+
   const card=el('div','card pad');
 
   // Branch details
   if(isBoss){
     const hdr=el('div');hdr.style.cssText='margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:12px';
+    const photoF=el('div','field');photoF.appendChild(el('label',null,'Branch photo'));
+    const photoRow=el('div','branch-photo-row');
+    const prev=el('div','logo-preview');prev.innerHTML=branch.logo?`<img src="${branch.logo}">`:esc((branch.short||branch.label||'BR').slice(0,2).toUpperCase());
+    const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
+    document.body.appendChild(up);
+    const upBtn=el('button','btn ghost sm','Upload photo');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
+    const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{branch.logo='';prev.innerHTML=esc((branch.short||branch.label||'BR').slice(0,2).toUpperCase());save();applyBrand();toast('Branch photo removed');};
+    up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{branch.logo=r.result;prev.innerHTML=`<img src="${branch.logo}">`;save();applyBrand();toast('Branch photo updated','good');};r.readAsDataURL(f);};
+    const photoBtns=el('div');photoBtns.style.display='flex';photoBtns.style.gap='8px';photoBtns.appendChild(upBtn);photoBtns.appendChild(clrBtn);
+    photoRow.appendChild(prev);photoRow.appendChild(photoBtns);photoF.appendChild(photoRow);hdr.appendChild(photoF);
     const dt=el('table');dt.style.cssText='width:100%;margin-bottom:8px';
     const tdStyle='width:100px;font-size:11px;color:var(--muted);padding:3px 8px 3px 0;vertical-align:middle;white-space:nowrap';
     // Branch name + short
@@ -5031,7 +5063,19 @@ function settingsSystems(main){
     card.appendChild(hdr);
   }else{
     const hdr=el('div');hdr.style.marginBottom='12px';
-    hdr.innerHTML='<b style="font-size:16px">'+esc(branch.label)+'</b>';
+    hdr.innerHTML='<b style="font-size:16px;display:block;margin-bottom:10px">'+esc(branch.label)+'</b>';
+    if(isIncharge){
+      const photoF=el('div','field');photoF.appendChild(el('label',null,'Branch photo'));
+      const photoRow=el('div','branch-photo-row');
+      const prev=el('div','logo-preview');prev.innerHTML=branch.logo?`<img src="${branch.logo}">`:esc((branch.short||branch.label||'BR').slice(0,2).toUpperCase());
+      const up=el('input');up.type='file';up.accept='image/*';up.style.cssText='position:fixed;top:-200px;left:-200px;opacity:0;width:1px;height:1px;';
+      document.body.appendChild(up);
+      const upBtn=el('button','btn ghost sm','Upload photo');upBtn.onclick=(e)=>{e.preventDefault();up.value='';up.click();};
+      const clrBtn=el('button','btn ghost sm','Remove');clrBtn.onclick=()=>{branch.logo='';prev.innerHTML=esc((branch.short||branch.label||'BR').slice(0,2).toUpperCase());save();applyBrand();toast('Branch photo removed');};
+      up.onchange=()=>{const f=up.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{branch.logo=r.result;prev.innerHTML=`<img src="${branch.logo}">`;save();applyBrand();toast('Branch photo updated','good');};r.readAsDataURL(f);};
+      const photoBtns=el('div');photoBtns.style.display='flex';photoBtns.style.gap='8px';photoBtns.appendChild(upBtn);photoBtns.appendChild(clrBtn);
+      photoRow.appendChild(prev);photoRow.appendChild(photoBtns);photoF.appendChild(photoRow);hdr.appendChild(photoF);
+    }
     card.appendChild(hdr);
   }
 
@@ -5158,7 +5202,7 @@ function settingsSystems(main){
 
   // Pending approvals for this branch
   const canApproveUsers=isBoss||isIncharge;
-  const approverSystems=isBoss?branchSystems:branchSystems.filter(s=>s.id===SESSION.scope);
+  const approverSystems=branchSystems;
   const pending=DB.users.filter(u=>u.pending&&(u.branchId===branch.id||!u.branchId));
   if(pending.length&&canApproveUsers){
     const pHdr=el('div');pHdr.style.cssText='margin-top:12px;padding:10px 0;border-top:1px solid var(--line)';
@@ -5170,7 +5214,7 @@ function settingsSystems(main){
       const ra=el('div','row-actions');
       const approve=el('button','btn brass tiny','Approve');
       approve.onclick=()=>{
-        const roleI=selectEl(isBoss?[{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}]:[{label:'Staff',value:'staff'}],'staff');
+        const roleI=selectEl([{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}],'staff');
         const scopeOptions=(approverSystems.length?approverSystems:branchSystems).map(s=>({label:scopeLabel(s.id),value:s.id}));
         const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SESSION.scope||'kitchen');
         const body=el('div');
@@ -5179,7 +5223,7 @@ function settingsSystems(main){
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=()=>{u.pending=false;u.role=isBoss?roleI.value:'staff';u.scope=scopeI.value;u.branchId=branch.id;delete u.pendingAt;save();closeModal();render();toast(u.name+' approved','good');};
+        ok.onclick=()=>{u.pending=false;u.role=roleI.value;u.scope=scopeI.value;u.branchId=branch.id;delete u.pendingAt;save();closeModal();render();toast(u.name+' approved','good');};
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
