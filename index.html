@@ -207,6 +207,9 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .tb-title span,.tb-title small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-title small{font-size:11px;color:var(--muted);font-family:'Avenir Next',sans-serif;font-weight:400;letter-spacing:.03em}
 .tb-spacer{flex:1}
+.top-clock{font-family:'Avenir Next',sans-serif;text-align:right;line-height:1.1;flex:none;min-width:74px}
+.top-clock .clock-time{font-weight:800;font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.top-clock .clock-date{font-size:10.5px;color:var(--muted);margin-top:2px;white-space:nowrap}
 .scope-badge{font-family:'Avenir Next',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:20px}
 .scope-badge.kitchen{background:rgba(47,72,88,.12);color:var(--boh)}
 .scope-badge.restaurant{background:rgba(122,74,43,.12);color:var(--foh)}
@@ -280,8 +283,6 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .scope-tabs{display:flex;justify-content:flex-end;background:transparent;border:0;border-radius:0;padding:0;gap:6px;margin:0 0 8px auto;font-family:'Avenir Next',sans-serif}
 .scope-tabs button{padding:8px 12px;border-radius:9px;border:1px solid var(--line);font-size:13.5px;font-weight:700;color:var(--muted);background:#fff}
 .scope-tabs button.on{background:var(--ink);border-color:var(--ink);color:var(--paper);box-shadow:none}
-.scope-tabs button.on.kitchen{color:var(--boh)}
-.scope-tabs button.on.restaurant{color:var(--foh)}
 
 /* table */
 .tablewrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;border-radius:var(--radius);border:1px solid var(--line);-webkit-overflow-scrolling:touch}
@@ -437,6 +438,9 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .topbar{padding:9px 10px;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
   .tb-title{font-size:14px}
   .tb-title small{font-size:10px}
+  .top-clock{min-width:58px}
+  .top-clock .clock-time{font-size:12px}
+  .top-clock .clock-date{display:none}
   .scope-badge{display:none} /* role chip hidden — saves space */
   .bell,.iconbtn{width:34px;height:34px;flex:none}
   #branchSwitchBtn{padding:8px 9px;font-size:0;gap:0;flex:none}
@@ -698,8 +702,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div class="tb-title" id="tbTitle"><span id="tbBizName">StockLine</span><small id="tbVenue">—</small></div>
     <span id="syncDot" title="Synced" style="display:none;width:8px;height:8px;border-radius:50%;background:var(--sage);margin-left:4px;flex-shrink:0"></span>
     <div class="tb-spacer"></div>
-    <div class="scope-badge" id="scopeBadge">—</div>
     <button class="btn ghost sm" id="branchSwitchBtn" style="display:none">Switch branch</button>
+    <div class="top-clock" id="topClock"></div>
     <button class="bell" id="announceBtn" title="Announcements">📣<span class="dot hidden" id="announceDot"></span></button>
     <button class="bell" id="messagesBtn" title="Messages">💬<span class="dot hidden" id="messagesDot"></span></button>
     <button class="bell" id="bellBtn">🔔<span class="dot hidden" id="bellDot"></span></button>
@@ -1928,7 +1932,9 @@ function orderCountFor(scope){return activeItems(scope).filter(i=>i.qty<i.par&&!
 /* Returns announcements visible to the current user based on their scope */
 function visibleAnnouncements(){
   if(!SESSION)return[];
+  const myBranch=userBranchId();
   return (DB.announcements||[]).filter(a=>{
+    if(a.branchId&&a.branchId!==myBranch)return false;
     if(a.scope==='all')return true;
     if(SESSION.role==='boss')return true;
     return a.scope===SESSION.scope;
@@ -1947,6 +1953,14 @@ function currentBranch(){
   const sys=(DB.systems||[]).find(s=>s.id===SCOPE)||(DB.systems||[])[0];
   const branchId=BRANCH_TAB||sys?.branchId||'branch_1';
   return (DB.branches||[]).find(b=>b.id===branchId)||(DB.branches||[])[0]||null;
+}
+function userBranchId(){
+  const systems=DB.systems||[];
+  if(SESSION?.role==='boss')return currentBranch()?.id||BRANCH_TAB||'branch_1';
+  return SESSION?.branchId||(systems.find(s=>s.id===SESSION?.scope)?.branchId)||'branch_1';
+}
+function branchLabelById(id){
+  return (DB.branches||[]).find(b=>b.id===id)?.label||DB.venue?.name||'Current branch';
 }
 function switchBranchInPlace(branchId){
   if(!SESSION||SESSION.role!=='boss')return;
@@ -1984,8 +1998,6 @@ function branchSwitchModal(){
 }
 function buildNav(){
   const sb=$('#sidebar');sb.innerHTML='';
-  const clock=el('div','sidebar-clock');clock.id='sidebarClock';
-  sb.appendChild(clock);
   paintClock();
   const cfg=navConfig();
   const mkItem=(it)=>{
@@ -2033,12 +2045,14 @@ function buildNav(){
   foot.appendChild(lo);sb.appendChild(foot);
   // scope badge
   const badge=$('#scopeBadge');
-  if(SESSION.role==='boss'){
-    const br=currentBranch();
-    badge.className='scope-badge boss';
-    badge.textContent=br?br.label:'Boss';
+  if(badge){
+    if(SESSION.role==='boss'){
+      const br=currentBranch();
+      badge.className='scope-badge boss';
+      badge.textContent=br?br.label:'Boss';
+    }
+    else{const sc=SESSION.scope;badge.className='scope-badge '+sc;badge.textContent=scopeLabel(sc);}
   }
-  else{const sc=SESSION.scope;badge.className='scope-badge '+sc;badge.textContent=scopeLabel(sc);}
   const branchBtn=$('#branchSwitchBtn');
   if(branchBtn){
     branchBtn.style.display=(SESSION.role==='boss'&&(DB.branches||[]).length>1)?'inline-flex':'none';
@@ -2050,7 +2064,7 @@ function closeNav(){$('#sidebar').classList.remove('open');$('#navScrim').classL
 $('#hambBtn').onclick=()=>{$('#sidebar').classList.contains('open')?closeNav():openNav();};
 $('#navScrim').onclick=closeNav;
 function paintClock(){
-  const c=$('#sidebarClock');if(!c)return;
+  const c=$('#topClock');if(!c)return;
   const d=new Date();
   const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const dateStr=dayNames[d.getDay()]+' '+fmtDate(d.getTime());
@@ -3974,7 +3988,7 @@ function pageAnnounce(main){
 
   list.forEach(a=>{
     const c=el('div','card pad');c.style.marginBottom='12px';
-    const scopeChip=a.scope==='all'?'<span class="chip ok" style="font-size:11px">Everyone</span>':
+    const scopeChip=a.scope==='all'?'<span class="chip ok" style="font-size:11px">'+esc(a.branchId?branchLabelById(a.branchId):'Everyone')+'</span>':
       `<span class="chip ${a.scope}" style="font-size:11px">${esc(scopeLabel(a.scope))}</span>`;
     const pinChip=a.pinned?'<span class="chip warn" style="font-size:11px">📌 Pinned</span>':'';
     c.innerHTML=`<div class="flex-between" style="margin-bottom:8px">
@@ -3997,16 +4011,28 @@ function pageAnnounce(main){
   });
 }
 function announceModal(existing){
-  const canPostAll=SESSION.role==='boss';
+  const isOwner=SESSION.role==='boss';
+  const initialBranchId=existing?.branchId||userBranchId();
   const body=el('div');
   const titleI=input(existing?existing.title:'','Title (optional)');
   const bodyI=el('textarea');bodyI.rows=5;bodyI.placeholder='Write your announcement…';bodyI.value=existing?existing.body:'';
   bodyI.style.cssText='width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font-family:inherit;font-size:14px;resize:vertical;box-sizing:border-box;';
-  const scopeOpts=[{label:'Everyone',value:'all'},...visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id}))];
-  const scopeI=canPostAll?selectEl(scopeOpts,existing?existing.scope:'all'):null;
   body.appendChild(field('Title (optional)',titleI));
   body.appendChild(field('Message',bodyI));
-  if(scopeI)body.appendChild(field('Visible to',scopeI));
+  const branchI=isOwner?selectEl((DB.branches||[]).map(b=>({label:b.label||'Branch',value:b.id})),initialBranchId):null;
+  const scopeWrap=el('div');
+  function buildAnnouncementScope(branchId,selectedScope){
+    scopeWrap.innerHTML='';
+    const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
+    const opts=[{label:branchLabelById(branchId)+' branch',value:'all'},...branchSystems.map(s=>({label:scopeLabel(s.id),value:s.id}))];
+    scopeWrap.appendChild(selectEl(opts,selectedScope||'all'));
+  }
+  if(isOwner){
+    body.appendChild(field('Branch',branchI,'Choose which branch receives this announcement.'));
+    buildAnnouncementScope(initialBranchId,existing?existing.scope:'all');
+    branchI.onchange=()=>buildAnnouncementScope(branchI.value,'all');
+    body.appendChild(field('Visible to',scopeWrap));
+  }
   const err=el('div','err');body.appendChild(err);
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -4014,12 +4040,15 @@ function announceModal(existing){
   ok.onclick=()=>{
     const b=bodyI.value.trim();
     if(!b){err.textContent='Write something before posting.';return;}
-    const sc=scopeI?scopeI.value:SESSION.scope;
+    const scopeI=scopeWrap.querySelector('select');
+    const sc=isOwner?(scopeI?scopeI.value:'all'):SESSION.scope;
+    const selectedBranchId=isOwner?(branchI.value||initialBranchId):userBranchId();
+    const branchId=sc==='all'?selectedBranchId:((DB.systems||[]).find(s=>s.id===sc)?.branchId||selectedBranchId);
     if(existing){
-      existing.title=titleI.value.trim();existing.body=b;existing.scope=sc;existing.editedAt=now();
+      existing.title=titleI.value.trim();existing.body=b;existing.scope=sc;existing.branchId=branchId;existing.editedAt=now();
       save();closeModal();render();toast('Updated','good');
     }else{
-      DB.announcements.unshift({id:uid(),title:titleI.value.trim(),body:b,scope:sc,byId:SESSION.id,byName:SESSION.name,ts:now(),pinned:false,readBy:[SESSION.id]});
+      DB.announcements.unshift({id:uid(),title:titleI.value.trim(),body:b,scope:sc,branchId,byId:SESSION.id,byName:SESSION.name,ts:now(),pinned:false,readBy:[SESSION.id]});
       save();closeModal();render();toast('Posted','good');
     }
   };
@@ -5257,23 +5286,6 @@ function settingsSystems(main){
 
 /* ---- Account ---- */
 function settingsAccount(main){
-  if(SESSION.role==='boss'){
-    const bc=el('div','card pad');bc.style.marginBottom='12px';
-    const bizI=input(DB.venue?.name||DB.brand?.appName||'','Business name');
-    bc.appendChild(field('Business name',bizI,'Shown at the top of the app for the owner account.'));
-    const bizErr=el('div','err');bc.appendChild(bizErr);
-    const bizOk=el('button','btn brass','Save business name');
-    bizOk.onclick=()=>{
-      const n=bizI.value.trim();
-      if(!n){bizErr.textContent='Business name cannot be blank.';return;}
-      if(!DB.venue)DB.venue={};
-      if(!DB.brand)DB.brand={};
-      DB.venue.name=n;
-      DB.brand.appName=n;
-      save();applyBrand();buildNav();bizErr.textContent='';toast('Business name updated','good');
-    };
-    bc.appendChild(bizOk);main.appendChild(bc);
-  }
   const nc=el('div','card pad');nc.style.marginBottom='12px';
   const nameI=input(SESSION.name,'Full name');
   nc.appendChild(field('Display name',nameI,'Shown in greetings, logs and history.'));
