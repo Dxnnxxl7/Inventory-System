@@ -31,7 +31,7 @@
   --shadow:0 1px 2px rgba(20,17,13,.06),0 6px 20px rgba(20,17,13,.06);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;overflow-x:auto;width:100%;max-width:100%}
+html,body{margin:0;padding:0;overflow-x:auto;width:100%;max-width:none}
 body{
   font-family:'Iowan Old Style','Palatino Linotype',Georgia,serif;
   background:#ffffff;color:var(--ink);
@@ -333,7 +333,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .modal-head,.modal-body,.modal-foot{padding-left:14px;padding-right:14px}
   html,body,#app{overflow-x:auto}
   .layout{overflow-x:visible}
-  .main{padding:10px;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .topbar,.layout,.main{min-width:560px}
+  .main{padding:10px;max-width:none;overflow-x:visible;-webkit-overflow-scrolling:touch}
 
   /* topbar tighter on mobile */
   .topbar{padding:9px 10px;gap:8px;overflow:visible}
@@ -344,6 +345,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   #branchSwitchBtn{display:none !important}
 
   /* tables scroll horizontally inside their own wrapper */
+  .sticky-bar,.page-head,.main>.card{min-width:540px}
   .tablewrap{overflow-x:scroll;-webkit-overflow-scrolling:touch;margin:0;max-width:100%;touch-action:pan-x pan-y}
   table{min-width:480px;font-size:13px}
   th,td{padding:8px 10px}
@@ -399,7 +401,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 
 /* Extra small phones (iPhone SE etc.) */
 @media(max-width:390px){
-  .main{padding:8px}
+  .topbar,.layout,.main{min-width:560px}
+  .main{padding:8px;max-width:none}
   .topbar{padding:8px;gap:6px}
   .tb-title{font-size:13px}
   .seg button{font-size:12px;padding:6px 8px}
@@ -5157,8 +5160,6 @@ window.addEventListener('offline',()=>{
 </script>
 </body>
 </html>
-
-
 
 
 
