@@ -31,11 +31,11 @@
   --shadow:0 1px 2px rgba(20,17,13,.06),0 6px 20px rgba(20,17,13,.06);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+html,body{margin:0;padding:0;overflow-x:auto;width:100%;max-width:100%}
 body{
   font-family:'Iowan Old Style','Palatino Linotype',Georgia,serif;
   background:#ffffff;color:var(--ink);
-  font-size:16px;line-height:1.45;overflow-x:hidden;
+  font-size:16px;line-height:1.45;overflow-x:auto;
 }
 .sans{font-family:'Avenir Next','Segoe UI',system-ui,sans-serif}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
@@ -105,19 +105,22 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .demo-note{font-size:11.5px;color:var(--muted);margin-top:16px;font-family:'Avenir Next',sans-serif;line-height:1.5}
 
 /* ---------- APP SHELL ---------- */
-#app{display:none;min-height:100vh}
+#app{display:none;min-height:100vh;width:100%;overflow-x:auto}
 .topbar{
   position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;
   padding:11px 16px;background:var(--card);border-bottom:1px solid var(--line);
+  width:100%;max-width:100%;
 }
-.hamb{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line)}
+.topbar>*{min-width:0}
+.hamb{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);flex:none}
 .hamb span,.hamb span::before,.hamb span::after{content:'';display:block;width:17px;height:2px;background:var(--ink);position:relative}
 .hamb span::before{position:absolute;top:-5px}
 .hamb span::after{position:absolute;top:5px}
 .topbar .tb-logo{width:32px;height:32px;border-radius:8px;overflow:hidden;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Avenir Next',sans-serif;flex:none}
 .topbar .tb-logo img{width:100%;height:100%;object-fit:cover}
-.tb-title{font-weight:600;font-size:17px;line-height:1.1}
-.tb-title small{display:block;font-size:11px;color:var(--muted);font-family:'Avenir Next',sans-serif;font-weight:400;letter-spacing:.03em}
+.tb-title{font-weight:600;font-size:17px;line-height:1.1;min-width:0;overflow:hidden}
+.tb-title span,.tb-title small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-title small{font-size:11px;color:var(--muted);font-family:'Avenir Next',sans-serif;font-weight:400;letter-spacing:.03em}
 .tb-spacer{flex:1}
 .scope-badge{font-family:'Avenir Next',sans-serif;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:5px 10px;border-radius:20px}
 .scope-badge.kitchen{background:rgba(47,72,88,.12);color:var(--boh)}
@@ -126,7 +129,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .bell{position:relative;width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);font-size:18px}
 .bell .dot{position:absolute;top:6px;right:7px;width:9px;height:9px;background:var(--bad);border-radius:50%;border:2px solid var(--card)}
 
-.layout{display:flex;min-height:calc(100vh - 61px)}
+.layout{display:flex;min-height:calc(100vh - 61px);width:100%;max-width:100%;overflow-x:visible}
 .sidebar{
   width:248px;flex:none;background:var(--card);border-right:1px solid var(--line);
   padding:14px 10px;display:flex;flex-direction:column;gap:2px;transition:transform .22s ease;
@@ -149,7 +152,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .side-foot .who{font-family:'Avenir Next',sans-serif;font-size:12.5px;color:var(--muted);padding:6px 4px 10px}
 .side-foot .who b{color:var(--ink);display:block;font-size:14px}
 
-.main{flex:1;min-width:0;padding:22px;max-width:1080px;background:#ffffff}
+.main{flex:1;min-width:0;width:100%;padding:22px;max-width:1080px;background:#ffffff;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .scrim{display:none;position:fixed;inset:0;background:rgba(20,17,13,.4);z-index:25}
 
 .sticky-bar{position:sticky;top:0;z-index:15;background:#fff;padding-bottom:10px;margin-bottom:4px;border-bottom:1px solid var(--line)}
@@ -160,12 +163,18 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .page-head p{margin:5px 0 0;color:var(--muted);font-size:14px;font-family:'Avenir Next',sans-serif}
 .head-actions{display:flex;gap:8px;flex-wrap:wrap}
 
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
 .card.pad{padding:18px}
 .grid{display:grid;gap:14px}
 .cols-3{grid-template-columns:repeat(3,1fr)}
 .cols-2{grid-template-columns:repeat(2,1fr)}
 .stat{padding:16px}
+.stat-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.stat-row .card.stat{flex:1;min-width:60px;padding:6px 10px}
+@media(max-width:520px){
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr)}
+  .stat-row .card.stat{min-width:0}
+}
 .stat .k{font-family:'Avenir Next',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .stat .v{font-size:32px;font-weight:600;margin-top:4px;line-height:1}
 .stat .v small{font-size:14px;color:var(--muted);font-weight:400}
@@ -180,7 +189,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .scope-tabs button.on.restaurant{color:var(--foh)}
 
 /* table */
-.tablewrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--line)}
+.tablewrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;border-radius:var(--radius);border:1px solid var(--line);-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;font-family:'Avenir Next',sans-serif;font-size:13.5px}
 th{text-align:left;padding:11px 13px;background:var(--paper);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#333;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--line)}
 td{padding:11px 13px;border-bottom:1px solid var(--line);vertical-align:middle;background:var(--card)}
@@ -297,15 +306,17 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .suptag{font-family:'Avenir Next',sans-serif;font-size:11px;color:var(--muted)}
 .list-card{padding:15px 16px;border-bottom:1px solid var(--line)}
 .list-card:last-child{border-bottom:none}
-.flex-between{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.flex-between{display:flex;justify-content:space-between;align-items:center;gap:12px;min-width:0}
+.flex-between>*{min-width:0}
 
 /* ===== RESPONSIVE ===== */
 
 /* Tablet & below — sidebar becomes a drawer */
 @media(max-width:860px){
   .cols-3{grid-template-columns:1fr 1fr}
-  .main{padding:14px}
-  .sidebar{position:fixed;top:61px;bottom:0;left:0;z-index:28;transform:translateX(-100%);box-shadow:6px 0 30px rgba(0,0,0,.12)}
+  .main{padding:14px;max-width:100%}
+  .layout{display:block}
+  .sidebar{position:fixed;top:61px;bottom:0;left:0;z-index:28;transform:translateX(-100%);box-shadow:6px 0 30px rgba(0,0,0,.12);max-width:82vw}
   .sidebar.open{transform:translateX(0)}
   .scrim.show{display:block}
   .page-head h2{font-size:20px}
@@ -318,16 +329,22 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 @media(max-width:520px){
   .cols-3,.cols-2{grid-template-columns:1fr}
   .frow{flex-direction:column;gap:0}
-  .modal{max-width:100%;border-radius:18px 18px 0 0}
-  .main{padding:10px}
+  .modal{width:100%;max-width:100%;border-radius:18px 18px 0 0}
+  .modal-head,.modal-body,.modal-foot{padding-left:14px;padding-right:14px}
+  html,body,#app{overflow-x:auto}
+  .layout{overflow-x:visible}
+  .main{padding:10px;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
 
   /* topbar tighter on mobile */
-  .topbar{padding:9px 12px;gap:8px}
-  .tb-title{font-size:15px}
+  .topbar{padding:9px 10px;gap:8px;overflow:visible}
+  .tb-title{font-size:14px}
   .tb-title small{font-size:10px}
+  .scope-badge{display:none} /* role chip hidden — saves space */
+  .bell,.iconbtn{width:34px;height:34px;flex:none}
+  #branchSwitchBtn{display:none !important}
 
-  /* tables scroll horizontally */
-  .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -10px;padding:0 10px}
+  /* tables scroll horizontally inside their own wrapper */
+  .tablewrap{overflow-x:scroll;-webkit-overflow-scrolling:touch;margin:0;max-width:100%;touch-action:pan-x pan-y}
   table{min-width:480px;font-size:13px}
   th,td{padding:8px 10px}
 
@@ -335,8 +352,13 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .sticky-bar{padding:8px 0 6px;margin-bottom:2px}
   .sticky-bar .seg button{padding:6px 10px;font-size:13px}
 
-  /* cards */
+  /* cards never exceed screen */
+  .card,.list-card{max-width:100%;overflow:visible}
   .card.pad{padding:12px}
+  .flex-between{align-items:flex-start}
+  .row-actions{flex-wrap:wrap;justify-content:flex-end;min-width:0}
+  .head-actions{width:100%}
+  .head-actions .btn{flex:1 1 140px;min-width:0}
 
   /* page head */
   .page-head{margin-bottom:8px}
@@ -345,15 +367,17 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 
   /* seg pills wrap on small screens */
   .seg{flex-wrap:wrap;gap:4px}
-  .seg button{font-size:13px;padding:7px 10px}
+  .seg button{font-size:13px;padding:7px 10px;min-width:0}
+  .scope-tabs{display:flex;width:100%;overflow-x:auto}
+  .scope-tabs button{white-space:nowrap}
 
-  /* summary stat tiles compact */
-  .card.stat{padding:8px 6px;min-width:48px}
+  /* summary stat tiles: 3-per-row grid instead of overflowing flex */
+  .card .stat,.card.stat{padding:8px 6px;min-width:0}
   .card.stat .k{font-size:9px}
   .card.stat .v{font-size:16px}
 
   /* bigger touch targets for icon buttons */
-  .iconbtn{width:36px;height:36px;font-size:16px}
+  .iconbtn{font-size:16px}
 
   /* notification panel full width */
   .notif-panel{right:0;left:0;width:100%;border-radius:14px 14px 0 0;top:auto;bottom:0;max-height:80vh}
@@ -363,7 +387,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 
   /* forms */
   .field label{font-size:13px}
-  input,select,textarea{font-size:15px} /* prevents iOS zoom on focus */
+  input,select,textarea{font-size:15px;max-width:100%} /* prevents iOS zoom on focus */
 
   /* delivery line rows */
   .card.pad .frow{gap:0}
@@ -371,6 +395,17 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   /* hide non-essential table columns on mobile */
   table.mobile-compact th:nth-child(n+5):not(:last-child),
   table.mobile-compact td:nth-child(n+5):not(:last-child){display:none}
+}
+
+/* Extra small phones (iPhone SE etc.) */
+@media(max-width:390px){
+  .main{padding:8px}
+  .topbar{padding:8px;gap:6px}
+  .tb-title{font-size:13px}
+  .seg button{font-size:12px;padding:6px 8px}
+  .card.pad{padding:10px}
+  .page-head h2{font-size:17px}
+  table{font-size:12px}
 }
 
 /* Large desktop — wider content area */
@@ -2132,7 +2167,7 @@ function scopeSummaryCard(scope,hideLink){
   </div>`;
 
   // compact stat row
-  const statRow=el('div');statRow.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;';
+  const statRow=el('div','stat-row');
   const stats=[
     {label:'Total',val:items.length,color:'',dest:'stocks',scope},
     {label:'Low',val:low,color:'var(--warn)',dest:'order',scope},
@@ -2143,7 +2178,6 @@ function scopeSummaryCard(scope,hideLink){
   ];
   stats.forEach(s=>{
     const t=el('div','card stat clickable');
-    t.style.cssText='padding:6px 10px;min-width:60px;flex:1;';
     t.innerHTML=`<div class="k" style="font-size:10px">${s.label}</div><div class="v" style="font-size:18px;${s.color?'color:'+s.color:''}">${s.val}</div>`;
     t.onclick=()=>{
       if(s.scope)SCOPE=s.scope;
@@ -5123,12 +5157,6 @@ window.addEventListener('offline',()=>{
 </script>
 </body>
 </html>
-
-
-
-
-
-
 
 
 
