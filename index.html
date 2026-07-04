@@ -735,6 +735,76 @@ function load(){
   const s=seed();s._schema=SCHEMA_VERSION;localStorage.setItem(currentDbKey(),JSON.stringify(s));return s;
 }
 function currentDbKey(){return estDbKey(ACTIVE_EST_ID);}
+const SYNC_PENDING_PREFIX='stockline_pending_sync_';
+function pendingSyncKey(estId){return SYNC_PENDING_PREFIX+(estId||ACTIVE_EST_ID||'default');}
+function isBrowserOnline(){return !('onLine' in navigator)||navigator.onLine;}
+function hasPendingSync(estId){try{return localStorage.getItem(pendingSyncKey(estId))==='1';}catch(e){return false;}}
+function setPendingSync(estId){try{localStorage.setItem(pendingSyncKey(estId),'1');}catch(e){}}
+function clearPendingSync(estId){try{localStorage.removeItem(pendingSyncKey(estId));}catch(e){}}
+function updateSyncDot(state){
+  const dot=$('#syncDot');if(!dot)return;
+  if(!USE_SUPABASE){dot.style.display='none';return;}
+  dot.style.display='inline-block';
+  if(state==='syncing'){
+    dot.style.background='#f0a500';
+    dot.title='Syncing changes...';
+    return;
+  }
+  if(!isBrowserOnline()){
+    dot.style.background='#888';
+    dot.title=hasPendingSync()?'Offline mode - changes will sync when internet is back.':'Offline mode';
+    return;
+  }
+  if(hasPendingSync()){
+    dot.style.background='#f0a500';
+    dot.title='Changes waiting to sync';
+    return;
+  }
+  if(state==='error'){
+    dot.style.background='#c0392b';
+    dot.title='Sync failed - changes are saved on this device';
+    return;
+  }
+  dot.style.background='var(--sage)';
+  dot.title='Synced to cloud';
+}
+function markSyncPending(estId){if(!USE_SUPABASE)return;setPendingSync(estId);updateSyncDot();}
+function markSyncDone(estId){clearPendingSync(estId);updateSyncDot();}
+function scheduleCloudSave(){
+  if(!USE_SUPABASE)return;
+  markSyncPending(ACTIVE_EST_ID);
+  if(!isBrowserOnline())return;
+  retryPendingSync(false);
+}
+let _syncingOfflineChanges=false;
+async function retryPendingSync(showToast){
+  if(!USE_SUPABASE||!hasPendingSync()||_syncingOfflineChanges){updateSyncDot();return false;}
+  if(!isBrowserOnline()){updateSyncDot();return false;}
+  _syncingOfflineChanges=true;
+  updateSyncDot('syncing');
+  try{
+    if(SUPABASE_USER)await sbSave();
+    else await sbSaveShared();
+    markSyncDone(ACTIVE_EST_ID);
+    if(showToast)toast('Offline changes synced','good');
+    return true;
+  }catch(e){
+    console.warn('Pending sync failed:',e);
+    markSyncPending(ACTIVE_EST_ID);
+    updateSyncDot('error');
+    return false;
+  }finally{
+    _syncingOfflineChanges=false;
+  }
+}
+async function syncOrRefreshSharedDb(estId){
+  if(hasPendingSync(estId)){
+    if(estId&&estId!==ACTIVE_EST_ID){ACTIVE_EST_ID=estId;DB=load();}
+    await retryPendingSync(false);
+    return true;
+  }
+  return refreshSharedDb(estId);
+}
 
 // ── SAVE: write to localStorage + Supabase ────────────────────────────────
 function saveLocalOnly(){
@@ -749,42 +819,37 @@ function saveLocalOnly(){
 }
 function save(){
   if(!saveLocalOnly())return false;
-  if(USE_SUPABASE){
-    if(SUPABASE_USER)sbSave().catch(e=>console.warn('Supabase save failed:',e));
-    else sbSaveShared().catch(e=>console.warn('Shared save failed:',e));
-  }
+  scheduleCloudSave();
   return true;
 }
 
 async function saveAndWait(successMsg){
   if(!saveLocalOnly())return false;
-  let synced=true;
-  if(USE_SUPABASE){
-    try{
-      if(SUPABASE_USER)await sbSave();
-      else await sbSaveShared();
-    }catch(e){
-      synced=false;
-      console.warn('Cloud save failed:',e);
-    }
+  if(!USE_SUPABASE){toast(successMsg,'good');return true;}
+  markSyncPending(ACTIVE_EST_ID);
+  if(!isBrowserOnline()){
+    toast('Saved offline - will sync when internet is back.','good');
+    return true;
   }
+  const synced=await retryPendingSync(false);
   if(synced)toast(successMsg,'good');
-  else toast('Saved on this device, but could not sync to other users.','bad');
+  else toast('Saved on this device, but could not sync to other users yet.','bad');
   return true;
 }
 
 async function sbSaveShared(){
+  if(!isBrowserOnline())throw new Error('Offline');
   await loadSupabaseSDK();
   const client=getAnonClient();if(!client)throw new Error('Supabase client unavailable');
-  const dot=$('#syncDot');if(dot)dot.style.background='#f0a500';
+  updateSyncDot('syncing');
   const {error}=await client.from('establishments')
     .update({data:DB,updated_at:new Date().toISOString()})
     .eq('id',ACTIVE_EST_ID);
-  if(error){if(dot)dot.style.background='#c0392b';throw error;}
-  if(dot)dot.style.background='var(--sage)';
+  if(error){updateSyncDot('error');throw error;}
+  markSyncDone(ACTIVE_EST_ID);
 }
 async function sbLoadShared(estId){
-  if(!USE_SUPABASE)return null;
+  if(!USE_SUPABASE||!isBrowserOnline())return null;
   await loadSupabaseSDK();
   const client=getAnonClient();if(!client)return null;
   const {data,error}=await client.from('establishments').select('data').eq('id',estId).maybeSingle();
@@ -792,7 +857,7 @@ async function sbLoadShared(estId){
   return data.data;
 }
 async function refreshSharedDb(estId){
-  if(!USE_SUPABASE)return false;
+  if(!USE_SUPABASE||!isBrowserOnline())return false;
   try{
     const remote=await sbLoadShared(estId||ACTIVE_EST_ID);
     if(remote){
@@ -804,8 +869,11 @@ async function refreshSharedDb(estId){
   return false;
 }
 async function sbSave(){
-  const client=sb();if(!client)return;
-  const dot=$('#syncDot');if(dot)dot.style.background='#f0a500'; // yellow = saving
+  if(!isBrowserOnline())throw new Error('Offline');
+  await loadSupabaseSDK();
+  const client=sb();if(!client)throw new Error('Supabase client unavailable');
+  if(!SUPABASE_USER)throw new Error('Cloud user unavailable');
+  updateSyncDot('syncing');
   const name=DB.venue?.name||DB.brand?.appName||'Establishment';
   const {error}=await client.from('establishments').upsert({
     id:ACTIVE_EST_ID,
@@ -814,11 +882,11 @@ async function sbSave(){
     data:DB,
     updated_at:new Date().toISOString()
   },{onConflict:'id'});
-  if(error){if(dot)dot.style.background='#c0392b';throw error;}
-  if(dot)dot.style.background='var(--sage)'; // red=error, green=ok
+  if(error){updateSyncDot('error');throw error;}
+  markSyncDone(ACTIVE_EST_ID);
 }
 
-// ── LOAD: try Supabase first, fall back to localStorage ──────────────────
+// ?? LOAD: try Supabase first, fall back to localStorage ??????????????????
 async function sbLoad(estId){
   const client=sb();if(!client||!SUPABASE_USER)return null;
   const {data,error}=await client.from('establishments')
@@ -1048,7 +1116,7 @@ function applyBrand(){
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
-  const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
+  updateSyncDot();
 }
 function renderQuickRoles(){
   const wrap=$('#quickRoles');wrap.innerHTML='';
@@ -1606,6 +1674,7 @@ function finalizeLogin(){
   CURRENT='stocks';buildNav();renderBell();render();
   checkCutoffs();
   resetIdleLogoutTimer();
+  retryPendingSync(false);
   showLoginGreeting();
 }
 async function doLogin(){
@@ -1624,7 +1693,7 @@ async function doLogin(){
     if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
     $('#authMsg').textContent='Loading…';
-    await refreshSharedDb(ACTIVE_EST_ID);
+    await syncOrRefreshSharedDb(ACTIVE_EST_ID);
     const freshUser=(DB.users||[]).find(x=>(x.username&&x.username.toLowerCase()===inputLower)||(x.email&&x.email.toLowerCase()===inputLower))||localUser;
     if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
@@ -1647,16 +1716,22 @@ async function doLogin(){
         $('#authMsg').textContent='Loading\u2026';
         const ests=await sbLoadEstablishments();
         if(ests.length===0){
-          const remote=await sbLoad('default');
-          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey('default'),JSON.stringify(DB));}
+          if(hasPendingSync('default')){ACTIVE_EST_ID='default';DB=load();await syncOrRefreshSharedDb('default');}
+          else{
+            const remote=await sbLoad('default');
+            if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey('default'),JSON.stringify(DB));}
+          }
           let boss=DB.users.find(x=>x.role==='boss');
           if(!boss){boss={id:'boss',name:'Owner',username:input_,pass,role:'boss',email:input_};DB.users.push(boss);}
           else{boss.email=input_;boss.pass=pass;}
           save();SESSION=boss;$('#authMsg').textContent='';finalizeLogin();
         }else{
           const firstId=ests[0].id;ACTIVE_EST_ID=firstId;
-          const remote=await sbLoad(firstId);
-          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
+          if(hasPendingSync(firstId)){DB=load();await syncOrRefreshSharedDb(firstId);}
+          else{
+            const remote=await sbLoad(firstId);
+            if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
+          }
           let boss=DB.users.find(x=>x.role==='boss')||{id:'boss',name:'Owner',username:input_,role:'boss'};
           boss.email=input_;boss.pass=pass;
           if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
@@ -1675,7 +1750,7 @@ async function doLogin(){
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
   if(user.role==='boss'){SESSION=user;renderEstPicker(user);return;}
   $('#authMsg').textContent='Loading…';
-  await refreshSharedDb(ACTIVE_EST_ID);
+  await syncOrRefreshSharedDb(ACTIVE_EST_ID);
   const freshUser=(DB.users||[]).find(x=>x.username.toLowerCase()===u||(x.email&&x.email.toLowerCase()===u))||user;
   if(freshUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(freshUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
@@ -1711,6 +1786,8 @@ function resetIdleLogoutTimer(){
 ['click','keydown','input','scroll','touchstart','mousemove'].forEach(evt=>{
   document.addEventListener(evt,()=>{if(SESSION)resetIdleLogoutTimer();},{passive:true});
 });
+window.addEventListener('online',()=>{updateSyncDot();if(SESSION)retryPendingSync(true);});
+window.addEventListener('offline',()=>{updateSyncDot();if(SESSION)toast('Offline mode - changes will sync when internet is back.','good');});
 function showLoginGreeting(){
   const messages=[
     // sarcastic
@@ -1767,7 +1844,7 @@ applyBrand();renderQuickRoles();
         setTimeout(()=>render(),50);
         checkCutoffs();
         if(USE_SUPABASE){
-          refreshSharedDb(ACTIVE_EST_ID).then(ok=>{
+          syncOrRefreshSharedDb(ACTIVE_EST_ID).then(ok=>{
             if(!ok||!SESSION)return;
             const fresh=DB.users.find(x=>x.id===id);
             if(fresh)SESSION=fresh;
@@ -4924,11 +5001,8 @@ function settingsSystems(main){
               DB.branches=(DB.branches||[]).filter(b=>b.id!==_bid);
               if(!DB.systems.find(s=>s.id===SCOPE))SCOPE=DB.systems[0]?.id||'';
               BRANCH_TAB=DB.branches[0]?.id||null;
-              localStorage.setItem(currentDbKey(),JSON.stringify(DB));
-              if(USE_SUPABASE&&SUPABASE_USER){
-                sbSave().then(()=>{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);})
-                .catch(()=>{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},1000);});
-              }else{setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},500);}
+              save();
+              setTimeout(()=>{SUPPRESS_REALTIME=false;subscribeRealtime();},USE_SUPABASE?1000:500);
               buildNav();render();toast(_blabel+' deleted','good');
             },
             ()=>{SUPPRESS_REALTIME=false;subscribeRealtime();}
@@ -5329,6 +5403,8 @@ setInterval(()=>{checkPendingRequests();},30*1000);
 </script>
 </body>
 </html>
+
+
 
 
 
