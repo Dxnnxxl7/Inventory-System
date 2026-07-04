@@ -5171,7 +5171,7 @@ function settingsSystems(main){
     const t=el('table');t.style.width='100%';
     t.innerHTML='<thead><tr><th>#</th><th>System name</th><th>Description</th><th>Short</th><th>Items</th><th></th></tr></thead>';
     const tb=el('tbody');
-    const editable=isBoss?branchSystems:[branchSystems.find(s=>s.id===SESSION.scope)].filter(Boolean);
+    const editable=(isBoss||isIncharge)?branchSystems:[branchSystems.find(s=>s.id===SESSION.scope)].filter(Boolean);
     editable.forEach((sys,idx)=>{
       const tr=el('tr');
       const itemCount=DB.items.filter(i=>i.scope===sys.id&&!i.unused).length;
@@ -5195,10 +5195,10 @@ function settingsSystems(main){
       const td3=el('td');td3.appendChild(shortI);tr.appendChild(td3);
       const td4=el('td');td4.className='qty-cell';td4.textContent=itemCount;tr.appendChild(td4);
       const td5=el('td');
-      if(isBoss){
+      if(isBoss||isIncharge){
         td5.appendChild(saveBtn);
         // Only allow delete if not the default system AND branch has more than 1 system
-        if(branchSystems.length>1&&!sys.isDefault){
+        if(isBoss&&branchSystems.length>1&&!sys.isDefault){
           const delSys=el('button','btn ghost tiny','Delete');delSys.style.marginLeft='4px';
           delSys.onclick=()=>confirmModal('Delete "'+sys.label+'"?','Deletes all items, deliveries and suppliers in this system.',()=>{
             if(DB.systems.length<=1){toast('Cannot delete the only system','bad');return;}
@@ -5221,7 +5221,7 @@ function settingsSystems(main){
   }else{
     card.appendChild(el('div','suptag','No systems yet.'));
   }
-  if(isBoss){
+  if(isBoss||isIncharge){
     const addSysBtn=el('button','btn ghost sm','+ Add system');addSysBtn.style.marginTop='10px';
     addSysBtn.onclick=()=>{
       const body=el('div');
@@ -5238,6 +5238,9 @@ function settingsSystems(main){
         const short=(shortI.value.trim()||name.slice(0,3)).toUpperCase();
         const id='sys_'+uid();
         DB.systems.push({id,label:name,short,branchId:branch.id,isDefault:false});
+        DB.categories=DB.categories||{};
+        DB.storeTypes=DB.storeTypes||{};
+        DB.categoryFood=DB.categoryFood||{};
         DB.categories[id]=[];
         DB.storeTypes[id]=[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}];
         DB.categoryFood[id]={};
