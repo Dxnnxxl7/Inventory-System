@@ -189,9 +189,9 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .demo-note{font-size:11.5px;color:var(--muted);margin-top:16px;font-family:'Avenir Next',sans-serif;line-height:1.5}
 
 /* ---------- APP SHELL ---------- */
-#app{display:none;min-height:100vh;width:100%;overflow-x:hidden}
+#app{display:none;min-height:100vh;width:100%;overflow-x:hidden;padding-top:61px}
 .topbar{
-  position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;
+  position:fixed;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;gap:12px;
   padding:11px 16px;background:var(--card);border-bottom:1px solid var(--line);
   width:100%;max-width:100%;
 }
@@ -1115,7 +1115,7 @@ function storedLogoMark(){
 function applyBrand(){
   const b=(DB&&DB.brand)?DB.brand:{appName:'StockLine',logo:'',accent:'#b5862f'};
   const rawBizName=DB?.venue?.name||b.appName||'StockLine';
-  const bizName=/courallie pub/i.test(rawBizName)?'Stored':rawBizName;
+  const bizName=/^(courallie pub|storedo)$/i.test(String(rawBizName).trim())?'Stored':rawBizName;
   document.documentElement.style.setProperty('--brass',b.accent||'#b5862f');
   const initials=bizName.slice(0,2).toUpperCase();
   const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:(bizName==='Stored'?storedLogoMark():initials);
@@ -1127,7 +1127,7 @@ function applyBrand(){
   // Get current branch label
   const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
   const rawBranchLabel=currentBranch?.label||DB?.venue?.name||'—';
-  const branchLabel=/courallie pub/i.test(rawBranchLabel)?'Stored':rawBranchLabel;
+  const branchLabel=/^(courallie pub|storedo)$/i.test(String(rawBranchLabel).trim())?'Stored':rawBranchLabel;
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
   const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
