@@ -72,6 +72,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 }
 .shot-bar{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:14px}
 .shot-logo{width:34px;height:34px;border-radius:9px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-family:'Avenir Next',sans-serif;font-weight:800}
+.shot-logo svg{width:28px;height:24px}
 .shot-title b{font-size:18px}.shot-title div{font-family:'Avenir Next',sans-serif;font-size:12px;color:var(--muted)}
 .shot-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .shot-tabs span{font-family:'Avenir Next',sans-serif;font-size:12px;font-weight:700;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:#fff}
@@ -184,6 +185,7 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .hamb span::after{position:absolute;top:5px}
 .topbar .tb-logo{width:32px;height:32px;border-radius:8px;overflow:hidden;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;font-weight:700;font-family:'Avenir Next',sans-serif;flex:none}
 .topbar .tb-logo img{width:100%;height:100%;object-fit:cover}
+.topbar .tb-logo svg{width:27px;height:23px}
 .tb-title{font-weight:600;font-size:17px;line-height:1.1;min-width:0;overflow:hidden}
 .tb-title span,.tb-title small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-title small{font-size:11px;color:var(--muted);font-family:'Avenir Next',sans-serif;font-weight:400;letter-spacing:.03em}
@@ -519,13 +521,13 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     </div>
     <div class="product-shot" aria-hidden="true">
       <div class="shot-bar">
-        <div class="shot-logo">ST</div>
-        <div class="shot-title"><b>Courallie Pub</b><div>burwood</div></div>
+        <div class="shot-logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 180" aria-hidden="true"><line x1="28" y1="140" x2="28" y2="155" stroke="#a03030" stroke-width="28" stroke-linecap="round"/><line x1="82" y1="96" x2="82" y2="155" stroke="#c0612b" stroke-width="28" stroke-linecap="round"/><line x1="136" y1="58" x2="136" y2="155" stroke="#d4a017" stroke-width="28" stroke-linecap="round"/><line x1="190" y1="18" x2="190" y2="155" stroke="#4a7c59" stroke-width="28" stroke-linecap="round"/><text x="203" y="22" font-family="Georgia,serif" font-size="28" fill="#4a7c59">°</text></svg></div>
+        <div class="shot-title"><b>Stored</b><div>usestored.app</div></div>
       </div>
       <div class="shot-tabs"><span>Stocks</span><span>Deliveries</span><span>Need to order</span><span>Temps</span></div>
       <div class="shot-card">
-        <h3>System 1</h3>
-        <div class="suptag">In charge: qe</div>
+        <h3>Stocks</h3>
+        <div class="suptag">In-charge Boss</div>
         <div class="shot-grid">
           <div class="shot-stat"><span>Total</span><b>128</b></div>
           <div class="shot-stat"><span>Low</span><b style="color:var(--warn)">7</b></div>
@@ -1080,12 +1082,16 @@ function storeChip(store,scope){
 }
 
 /* ---------- AUTH ---------- */
+function storedLogoMark(){
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 180" aria-hidden="true"><line x1="28" y1="140" x2="28" y2="155" stroke="#a03030" stroke-width="28" stroke-linecap="round"/><line x1="82" y1="96" x2="82" y2="155" stroke="#c0612b" stroke-width="28" stroke-linecap="round"/><line x1="136" y1="58" x2="136" y2="155" stroke="#d4a017" stroke-width="28" stroke-linecap="round"/><line x1="190" y1="18" x2="190" y2="155" stroke="#4a7c59" stroke-width="28" stroke-linecap="round"/><text x="203" y="22" font-family="Georgia,serif" font-size="28" fill="#4a7c59">°</text></svg>';
+}
 function applyBrand(){
   const b=(DB&&DB.brand)?DB.brand:{appName:'StockLine',logo:'',accent:'#b5862f'};
-  const bizName=DB?.venue?.name||b.appName||'StockLine';
+  const rawBizName=DB?.venue?.name||b.appName||'StockLine';
+  const bizName=/courallie pub/i.test(rawBizName)?'Stored':rawBizName;
   document.documentElement.style.setProperty('--brass',b.accent||'#b5862f');
   const initials=bizName.slice(0,2).toUpperCase();
-  const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:initials;
+  const logoHTML=b.logo?`<img src="${b.logo}" alt="">`:(bizName==='Stored'?storedLogoMark():initials);
   const al=$('#authLogo');if(al)al.innerHTML=logoHTML;
   const tl=$('#tbLogo');if(tl)tl.innerHTML=logoHTML;
   const ab=$('#authBrand');if(ab)ab.textContent=bizName;
@@ -1093,7 +1099,8 @@ function applyBrand(){
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
   // Get current branch label
   const currentBranch=(DB?.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB?.branches||[])[0];
-  const branchLabel=currentBranch?.label||DB?.venue?.name||'—';
+  const rawBranchLabel=currentBranch?.label||DB?.venue?.name||'—';
+  const branchLabel=/courallie pub/i.test(rawBranchLabel)?'Stored':rawBranchLabel;
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
   const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
@@ -2282,16 +2289,14 @@ function scopeSummaryCard(scope,hideLink){
   const awaiting=items.filter(i=>i.ordered).length;
   const expired=items.filter(i=>i.expiry&&daysUntil(i.expiry)<0).length;
   const card=el('div','card pad');
-  const ic=inchargeOf(scope);
-  const icNames=ic.length?ic.map(u=>esc(u.name)).join(', '):'—';
   const sys=DB.systems?.find(s=>s.id===scope);
   const sysDesc=sys?.description||'';
 
-  // big system name header — no chip
+  // big stock header
   card.innerHTML=`<div style="margin-bottom:12px">
-    <b style="font-size:20px;display:block;line-height:1.2">${esc(scopeLabel(scope))}</b>
+    <b style="font-size:20px;display:block;line-height:1.2">Stocks</b>
     ${sysDesc?`<div class="suptag" style="margin-top:2px">${esc(sysDesc)}</div>`:''}
-    <div class="suptag" style="margin-top:4px">In charge: ${icNames}</div>
+    <div class="suptag" style="margin-top:4px">In-charge Boss</div>
   </div>`;
 
   // compact stat row
