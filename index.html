@@ -341,7 +341,6 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
   .tb-title small{font-size:10px}
   .scope-badge{display:none} /* role chip hidden — saves space */
   .bell,.iconbtn{width:34px;height:34px;flex:none}
-  #branchSwitchBtn{display:none !important}
 
   /* tables scroll horizontally inside their own wrapper */
   .tablewrap{overflow-x:scroll;-webkit-overflow-scrolling:touch;margin:0;max-width:100%;touch-action:pan-x pan-y}
@@ -1804,6 +1803,12 @@ function buildNav(){
   }
   const foot=el('div','side-foot');
   if(SESSION.role==='boss'){
+    if((DB.branches||[]).length>1){
+      const switchBtn=el('button','btn ghost sm','Switch branch');
+      switchBtn.style.cssText='width:100%;margin-bottom:8px';
+      switchBtn.onclick=branchSwitchModal;
+      foot.appendChild(switchBtn);
+    }
     const currentBranch=(DB.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB.branches||[])[0];
     if(currentBranch){
       const branchRow=el('div');branchRow.style.cssText='margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)';
@@ -1824,8 +1829,7 @@ function buildNav(){
   else{const sc=SESSION.scope;badge.className='scope-badge '+sc;badge.textContent=scopeLabel(sc);}
   const branchBtn=$('#branchSwitchBtn');
   if(branchBtn){
-    branchBtn.style.display=(SESSION.role==='boss'&&(DB.branches||[]).length>1)?'inline-flex':'none';
-    branchBtn.onclick=branchSwitchModal;
+    branchBtn.style.display='none';
   }
 }
 function openNav(){$('#sidebar').classList.add('open');$('#navScrim').classList.add('show');}
@@ -4650,16 +4654,13 @@ function settingsSystems(main){
     BRANCH_TAB=branches[0]?.id||null;
   }
 
-  // ── Top bar: branch sub-tabs + Add branch button ──────────────────────
+  // ── Top bar: current branch + Add branch button ──────────────────────
   const topBar=el('div','flex-between no-filter');topBar.style.marginBottom='14px';
 
-  const subTabs=el('div','seg');subTabs.style.flexWrap='wrap';subTabs.style.gap='6px';
-  branches.forEach(b=>{
-    const btn=el('button',BRANCH_TAB===b.id?'on':'',b.label);
-    btn.onclick=()=>{BRANCH_TAB=b.id;render();};
-    subTabs.appendChild(btn);
-  });
-  topBar.appendChild(subTabs);
+  const activeBranch=branches.find(b=>b.id===BRANCH_TAB);
+  const currentLabel=el('div','suptag');
+  currentLabel.innerHTML='Current branch<br><b style="font-size:15px;color:var(--ink);text-transform:none;letter-spacing:0">'+esc(activeBranch?.label||'Branch')+'</b>';
+  topBar.appendChild(currentLabel);
 
   if(isBoss){
     const addBranchBtn=el('button','btn brass sm','+ Add branch');
@@ -4684,8 +4685,7 @@ function settingsSystems(main){
         DB.categories[sys1Id]=[];
         DB.storeTypes[sys1Id]=[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}];
         DB.categoryFood[sys1Id]={};
-        BRANCH_TAB=branchId;
-        save();closeModal();render();toast(name+' branch added','good');
+        save();closeModal();buildNav();render();toast(name+' branch added. Use Switch branch to open it.','good');
       };
       foot.appendChild(cancel);foot.appendChild(ok);
       openModal('Add branch',body,foot);
@@ -4701,17 +4701,11 @@ function settingsSystems(main){
 
   const card=el('div','card pad');
 
-  // One unified table: business name + branch details
+  // Branch details
   if(isBoss){
     const hdr=el('div');hdr.style.cssText='margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:12px';
     const dt=el('table');dt.style.cssText='width:100%;margin-bottom:8px';
     const tdStyle='width:100px;font-size:11px;color:var(--muted);padding:3px 8px 3px 0;vertical-align:middle;white-space:nowrap';
-    // Business name row
-    const bizNameI=input(DB.venue?.name||DB.brand?.appName||'','e.g. GS Deli Cafe');bizNameI.style.fontSize='13px';
-    const trBiz=el('tr');trBiz.innerHTML='<td style="'+tdStyle+'">Business name</td>';
-    const tdBiz=el('td');tdBiz.appendChild(bizNameI);trBiz.appendChild(tdBiz);dt.appendChild(trBiz);
-    // Divider
-    const trDiv=el('tr');trDiv.innerHTML='<td colspan="2" style="padding:4px 0"><hr style="border:none;border-top:1px solid var(--line);margin:0"></td>';dt.appendChild(trDiv);
     // Branch name + short
     const nameI=input(branch.label,'Branch name');nameI.style.fontSize='13px';
     const shortI=input(branch.short||'','Short');shortI.style.cssText='font-size:13px;max-width:80px';
@@ -4731,8 +4725,6 @@ function settingsSystems(main){
     const detRow=el('div','flex-between');
     const saveDetBtn=el('button','btn brass sm','Save details');
     saveDetBtn.onclick=()=>{
-      const biz=bizNameI.value.trim();
-      if(biz){if(!DB.venue)DB.venue={};DB.venue.name=biz;if(!DB.brand)DB.brand={};DB.brand.appName=biz;}
       branch.label=nameI.value.trim()||branch.label;
       branch.short=shortI.value.trim()||(branch.label.slice(0,3).toUpperCase());
       dt.querySelectorAll('input[data-key]').forEach(inp=>{branch[inp.dataset.key]=inp.value.trim();});
@@ -5013,7 +5005,19 @@ function settingsAccount(main){
 /* ---- Data ---- */
 function settingsData(main){
   const ver=el('div','card pad');ver.style.marginBottom='14px';
-  ver.innerHTML=`<div class="flex-between"><div><b>App version</b><div class="suptag">StockLine v${APP_VERSION}</div></div><span class="chip ok" style="font-size:11px">Up to date</span></div>`;
+  ver.innerHTML=`<div class="flex-between">
+    <div style="display:flex;align-items:center;gap:12px;min-width:0">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 180" width="44" height="36" style="flex:none">
+        <line x1="28" y1="140" x2="28" y2="155" stroke="#a03030" stroke-width="28" stroke-linecap="round"/>
+        <line x1="82" y1="96" x2="82" y2="155" stroke="#c0612b" stroke-width="28" stroke-linecap="round"/>
+        <line x1="136" y1="58" x2="136" y2="155" stroke="#d4a017" stroke-width="28" stroke-linecap="round"/>
+        <line x1="190" y1="18" x2="190" y2="155" stroke="#4a7c59" stroke-width="28" stroke-linecap="round"/>
+        <text x="203" y="22" font-family="Georgia,serif" font-size="28" fill="#4a7c59">°</text>
+      </svg>
+      <div><b>Stored</b><div class="suptag">App version v${APP_VERSION}</div></div>
+    </div>
+    <span class="chip ok" style="font-size:11px">Up to date</span>
+  </div>`;
   const isBoss=SESSION.role==='boss';
   main.appendChild(ver);
   const dz=el('div','card pad');
