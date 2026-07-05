@@ -2016,9 +2016,11 @@ function finalizeLogin(){
             const pw=pendingPasswordFields(req);
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
             const safeUsername=req.username||String(req.email||'').split('@')[0]||('user_'+String(req.id||'').slice(0,6));
-            const reqUser={id:authId||req.id,name:req.name,username:safeUsername,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
-            if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
-            else{
+            const reqUser={id:authId||req.id,name:req.name,username:safeUsername,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id||'branch_1',pending:true,pendingAt:req.created_at};
+            if(existing){
+              Object.assign(existing,reqUser,{id:existing.id||req.id});
+              changed=true;
+            }else{
               DB.users.push(reqUser);
               changed=true;
             }
@@ -7115,9 +7117,12 @@ async function checkPendingRequests(){
         const authId=pendingAuthId(req);
         const pw=pendingPasswordFields(req);
         const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
-        if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
-        else{
+        const safeUsername=req.username||String(req.email||'').split('@')[0]||('user_'+String(req.id||'').slice(0,6));
+        const reqUser={id:authId||req.id,name:req.name,username:safeUsername,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id||'branch_1',pending:true,pendingAt:req.created_at};
+        if(existing){
+          Object.assign(existing,reqUser,{id:existing.id||req.id});
+          changed=true;
+        }else{
           DB.users.push(reqUser);
           changed=true;
           // Show notification
