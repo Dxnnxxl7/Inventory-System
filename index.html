@@ -1939,7 +1939,8 @@ function finalizeLogin(){
             const authId=pendingAuthId(req);
             const pw=pendingPasswordFields(req);
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            const safeUsername=req.username||String(req.email||'').split('@')[0]||('user_'+String(req.id||'').slice(0,6));
+            const reqUser={id:authId||req.id,name:req.name,username:safeUsername,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
             if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
             else{
               DB.users.push(reqUser);
@@ -4577,7 +4578,7 @@ function composeMessageModal(){
   function renderList(){
     listWrap.innerHTML='';
     const q=srch.value.trim().toLowerCase();
-    const filtered=others.filter(u=>!q||u.name.toLowerCase().includes(q)||labelForUser(u).toLowerCase().includes(q));
+    const filtered=others.filter(u=>!q||String(u.name||'').toLowerCase().includes(q)||String(labelForUser(u)||'').toLowerCase().includes(q));
     if(!filtered.length){const e=el('div','suptag');e.style.padding='12px';e.textContent='No results.';listWrap.appendChild(e);return;}
     filtered.forEach(u=>{
       const row=el('div');
@@ -5609,7 +5610,7 @@ function pageTeam(main){
   searchBar(main,'Search name, username, role…');
   DB.users.forEach(u=>{
     const c=el('div','card pad');c.style.marginBottom='10px';
-    c.innerHTML=`<div class="flex-between"><div><b>${esc(u.name)}</b><div class="suptag">@${esc(u.username)} \u00b7 ${labelForUser(u)}</div></div></div>`;
+    c.innerHTML=`<div class="flex-between"><div><b>${esc(u.name||'Unnamed')}</b><div class="suptag">@${esc(u.username||u.email||'user')} \u00b7 ${labelForUser(u)}</div></div></div>`;
     const ra=el('div','row-actions');ra.style.marginTop='10px';
     const pw=el('button','btn ghost tiny','Change password');pw.onclick=()=>changePassModal(u);
     ra.appendChild(pw);
@@ -5874,6 +5875,7 @@ function settingsVenue(main){
 async function approveStaffUser(u,role,scope,branchId,label){
   if(!u.authId&&!u.passHash){toast('This old request is missing login data. Reject it and ask them to request again.','bad');return false;}
   let fallback=!u.authId;
+  if(!u.username)u.username=String(u.email||'').split('@')[0]||('user_'+String(u.id||'').slice(0,6));
   u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
   delete u.pendingAt;
   if(USE_SUPABASE&&u.authId){
@@ -5942,11 +5944,18 @@ function settingsTeam(main){
   function rTeam(){
     tList.innerHTML='';
     const q=tSrch.value.trim().toLowerCase();
-    DB.users.filter(u=>!u.pending&&(!q||u.name.toLowerCase().includes(q)||u.username.toLowerCase().includes(q)||labelForUser(u).toLowerCase().includes(q))).forEach(u=>{
+    DB.users.filter(u=>{
+      if(u.pending)return false;
+      if(!q)return true;
+      const name=String(u.name||'').toLowerCase();
+      const uname=String(u.username||u.email||'').toLowerCase();
+      const lbl=String(labelForUser(u)||'').toLowerCase();
+      return name.includes(q)||uname.includes(q)||lbl.includes(q);
+    }).forEach(u=>{
       const c=el('div','card pad');c.style.marginBottom='8px';
       // summary row
       const summary=el('div','flex-between');
-      summary.innerHTML=`<div><b>${esc(u.name)}</b><div class="suptag">@${esc(u.username)} \u00b7 ${labelForUser(u)}</div></div>`;
+      summary.innerHTML=`<div><b>${esc(u.name||'Unnamed')}</b><div class="suptag">@${esc(u.username||u.email||'user')} \u00b7 ${labelForUser(u)}</div></div>`;
       const ra=el('div','row-actions');
       const editBtn=el('button','btn ghost tiny','Edit');
       ra.appendChild(editBtn);
