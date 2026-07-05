@@ -906,7 +906,8 @@ function seed(){
     allergens:{}, // {itemId: 'Gluten, Dairy, ...'}
     categoryFood:{kitchen:{},restaurant:{}}, // {scope: {catName: true/false}}
     wastage:[], // {id,itemId,itemName,scope,qty,unit,reason,cost,byId,byName,ts}
-    stockHistory:[] // {id,itemId,itemName,scope,qty,par,event,ts}
+    stockHistory:[], // {id,itemId,itemName,scope,qty,par,event,ts}
+    cloudBackups:[] // rolling 30-day owner restore history
   };
 }
 let DB=load();
@@ -952,6 +953,7 @@ function load(){
       if(!d.allergens)d.allergens={};
       if(!d.wastage)d.wastage=[];
       if(!d.stockHistory)d.stockHistory=[];
+      if(!d.cloudBackups)d.cloudBackups=[];
       if(!d.tempLogs)d.tempLogs=[];
       if(!d.temperatureLogs)d.temperatureLogs=[];
       // Compliance: per-scope schedule of required daily temp checks, plus
@@ -998,6 +1000,7 @@ function currentDbKey(){return estDbKey(ACTIVE_EST_ID);}
 
 // ── SAVE: write to localStorage + Supabase ────────────────────────────────
 function save(){
+  createDailyCloudBackup('daily');
   localStorage.setItem(currentDbKey(),JSON.stringify(DB));
   if(USE_SUPABASE&&SUPABASE_USER){
     sbSave().catch(e=>console.warn('Supabase save failed:',e));
@@ -1012,7 +1015,7 @@ async function sbSave(){
     id:ACTIVE_EST_ID,
     owner_id:SUPABASE_USER.id,
     name,
-    data:DB,
+    data:dataWithoutPlainPasswords(DB),
     updated_at:new Date().toISOString()
   },{onConflict:'id'});
   if(dot)dot.style.background=error?'#c0392b':'var(--sage)'; // red=error, green=ok
@@ -1072,6 +1075,36 @@ let DELIV_CAT_FILTER=''; // active category filter on Deliveries page ('' = all)
 const $=s=>document.querySelector(s);
 const el=(t,c,h)=>{const e=document.createElement(t);if(c)e.className=c;if(h!=null)e.innerHTML=h;return e;};
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+async function passwordHash(password,salt){
+  salt=salt||uid()+uid();
+  const raw=salt+'|'+String(password||'');
+  if(window.crypto&&crypto.subtle&&window.TextEncoder){
+    const bytes=new TextEncoder().encode(raw);
+    const digest=await crypto.subtle.digest('SHA-256',bytes);
+    return{salt,hash:Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('')};
+  }
+  return{salt,hash:checksumOf(raw)};
+}
+async function setUserPassword(user,password){
+  const h=await passwordHash(password);
+  user.passSalt=h.salt;user.passHash=h.hash;delete user.pass;
+}
+async function userPassMatches(user,password){
+  if(user.passHash&&user.passSalt){
+    const h=await passwordHash(password,user.passSalt);
+    return h.hash===user.passHash;
+  }
+  return user.pass===password;
+}
+async function migratePlainPassword(user,password){
+  if(user&&user.pass===password&&!user.passHash){await setUserPassword(user,password);save();}
+}
+function dataWithoutPlainPasswords(src){
+  const data=JSON.parse(JSON.stringify(src||{}));
+  if(data.cloudBackups)data.cloudBackups=[];
+  if(Array.isArray(data.users))data.users.forEach(u=>{if(u.pass)u.pass='__redacted_plain_password__';});
+  return data;
+}
 function saveSessionState(){
   if(!SESSION)return;
   try{
@@ -1477,7 +1510,8 @@ async function doRegister(){
     const{data,error}=await sbSignUp(email,pass);
     if(error&&!error.message.includes('already registered')){$('#regMsg').textContent=error.message;$('#regBtn').disabled=false;return;}
     const newDb=blankDb(est);
-    const bossUser={id:'boss',name,username:email,pass,role:'boss',email};
+    const bossUser={id:'boss',name,username:email,role:'boss',email};
+    await setUserPassword(bossUser,pass);
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
     ACTIVE_EST_ID='default';SUPABASE_USER=data?.user||SUPABASE_USER;
     DB=newDb;localStorage.setItem(currentDbKey(),JSON.stringify(DB));
@@ -1497,7 +1531,8 @@ async function doRegister(){
     const loginUsername=username||email; // staff use username, fallback to email
     const firstScope=(selData.systemIds&&selData.systemIds[0])||'';
     if(!firstScope){$('#regMsg').textContent='This branch has no system available yet. Ask the owner to add one.';$('#regBtn').disabled=false;return;}
-    const newUser={id:uid(),name,username:loginUsername,pass,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
+    const newUser={id:uid(),name,username:loginUsername,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
+    await setUserPassword(newUser,pass);
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
@@ -1511,7 +1546,8 @@ async function doRegister(){
             establishment_id:selectedEstId,
             name:newUser.name,
             username:newUser.username,
-            pass:newUser.pass,
+            pass_hash:newUser.passHash,
+            pass_salt:newUser.passSalt,
             email:newUser.email,
             scope:newUser.scope,
             branch_id:newUser.branchId,
@@ -1810,7 +1846,7 @@ function finalizeLogin(){
             const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
             if(!DB.users.find(u=>u.id===req.id)){
-              DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
+              DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
               changed=true;
             }
           });
@@ -1861,7 +1897,7 @@ function userMatchesLogin(user,login){
   const email=String(user?.email||'').toLowerCase();
   return username===login||email===login;
 }
-function doLogin(){
+async function doLogin(){
   $('#authMsg').textContent='';
   const input_=$('#loginEmail').value.trim();
   const pass=$('#loginPass').value;
@@ -1871,8 +1907,9 @@ function doLogin(){
   const inputLower=input_.toLowerCase();
   const localUser=DB.users.find(x=>userMatchesLogin(x,inputLower));
   if(localUser&&localUser.role!=='boss'){
-    if(localUser.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
+    if(!(await userPassMatches(localUser,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
+    await migratePlainPassword(localUser,pass);
     SESSION=localUser;finalizeLogin();return;
   }
   // Email login → try Supabase (owner)
@@ -1883,8 +1920,9 @@ function doLogin(){
         if(error){
           // Supabase failed — try local match by email
           const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-          if(local&&local.pass===pass){
+          if(local&&(await userPassMatches(local,pass))){
             if(local.pending){$('#authMsg').textContent='Your account is waiting for approval.';return;}
+            await migratePlainPassword(local,pass);
             SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;
           }
           $('#authMsg').textContent='Incorrect email or password.';return;
@@ -1908,16 +1946,16 @@ function doLogin(){
           save();SESSION=boss;$('#authMsg').textContent='';
           renderEstPicker(boss);
         }
-      }).catch(err=>{
+      }).catch(async err=>{
         // Sign-in threw (e.g. network drop mid-request) — fall back to local, else surface the error.
         const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-        if(local&&local.pass===pass&&!local.pending){SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+        if(local&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
         $('#authMsg').textContent='Could not sign in — check your connection and try again.';
       });
-    }).catch(()=>{
+    }).catch(async ()=>{
       // SDK failed to load — fall back to local auth if possible.
       const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-      if(local&&local.pass===pass&&!local.pending){SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+      if(local&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
       $('#authMsg').textContent='Could not reach the sign-in service — check your connection.';
     });
     return;
@@ -1925,8 +1963,9 @@ function doLogin(){
   // Username/email → local auth (staff / incharge / owner fallback)
   const u=input_.toLowerCase();
   const user=DB.users.find(x=>userMatchesLogin(x,u));
-  if(!user||user.pass!==pass){$('#authMsg').textContent='Username or password is incorrect.';return;}
+  if(!user||!(await userPassMatches(user,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
+  await migratePlainPassword(user,pass);
   SESSION=user;
   if(user.role==='boss'){renderEstPicker(user);return;}
   finalizeLogin();
@@ -3134,6 +3173,7 @@ function removeItem(it){
     // remove wastage and stock history records
     DB.wastage=(DB.wastage||[]).filter(w=>w.itemId!==it.id);
     DB.stockHistory=(DB.stockHistory||[]).filter(h=>h.itemId!==it.id);
+    logAudit('Item deleted',`${it.name} removed from ${scopeLabel(it.scope)} (${it.qty} ${it.unit} on hand, min ${it.par})`,it.scope);
     save();render();toast('Item removed');
   });
 }
@@ -3144,11 +3184,13 @@ function approvePending(p){
   addBatch(it,p.qty||0,p.expiry||'',now());
   DB.items.push(it);
   DB.pending=DB.pending.filter(x=>x.id!==p.id);
+  logAudit('Pending item approved',`${it.name} approved into stock with ${it.qty} ${it.unit}`,p.scope);
   save();buildNav();render();toast('Approved and added to stock','good');
 }
 function logAudit(action,detail,scope){
   if(!DB.auditLog)DB.auditLog=[];
-  DB.auditLog.unshift({id:uid(),ts:now(),byId:SESSION.id,byName:SESSION.name,byRole:SESSION.role,byScope:SESSION.scope,scope:scope||SESSION.scope||'',action,detail});
+  DB.auditLog.unshift({id:uid(),ts:now(),byId:SESSION?.id||'system',byName:SESSION?.name||'System',byRole:SESSION?.role||'system',byScope:SESSION?.scope||'',scope:scope||SESSION?.scope||'',action,detail});
+  DB.auditLog=DB.auditLog.slice(0,2000);
 }
 function maybeLowNotify(scope){
   activeItems(scope).forEach(i=>{
@@ -3418,6 +3460,7 @@ function pageExpiring(main,embedded){
         it.qty=Math.max(it.qty-row.qty,0);
         if(batch){batch.qty=0;syncDerivedExpiry(it);}
         else{it.expiry='';it.action='';} // untracked item — this was its only batch
+        logAudit('Usage logged from expiring',`${it.name}: ${row.qty} ${it.unit} marked used from expiring stock`,scope);
         save();buildNav();render();toast('Logged as used','good');
       });
       cb.checked=false; // visual reset; row disappears on confirm via re-render
@@ -3554,6 +3597,7 @@ function removeDelivery(d){
     }
   });
   DB.deliveries=DB.deliveries.filter(x=>x.id!==d.id);
+  logAudit('Delivery removed',`${d.lines.length} line${d.lines.length===1?'':'s'} reversed${d.invoice?' · invoice '+d.invoice:''}`,d.scope);
   save();buildNav();render();toast('Delivery removed · stock reversed','good');
 }
 function deliveryModal(scope){
@@ -3808,6 +3852,7 @@ Move to designated cold storage immediately, then correct the temperature before
     // record delivery
     DB.deliveries.push({id:uid(),scope:delivScope,supplierId:supI.value,location:'',invoice:invI.value.trim(),
       byId:SESSION.id,byName:SESSION.name,ts:now(),lines:out});
+    logAudit('Delivery logged',`${out.length} line${out.length===1?'':'s'} received${invI.value.trim()?' · invoice '+invI.value.trim():''}`,delivScope);
     // snapshot of items that were ordered (awaiting delivery) before this delivery
     const orderedBefore=activeItems(delivScope).filter(i=>i.ordered);
     const deliveredIds=new Set(out.filter(l=>l.itemId).map(l=>l.itemId));
@@ -3941,8 +3986,10 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     qtyI.min='0';qtyI.step='any';qtyI.style.cssText='width:76px;padding:8px 9px;border-radius:8px';
     qtyI.onchange=()=>{
       const val=parseFloat(qtyI.value);
+      const old=i.orderQty??sugg;
       if(Number.isFinite(val)&&val>=0)i.orderQty=val;
       else{delete i.orderQty;qtyI.value=sugg;}
+      logAudit('Order quantity changed',`${i.name}: ${old} ${i.unit} -> ${i.orderQty??sugg} ${i.unit}`,i.scope);
       save();
       toast('Order quantity updated','good');
     };
@@ -4260,6 +4307,7 @@ function usageModal(scope){
     it.qty=Math.max(it.qty-q,0);
     deductBatchesFIFO(it,q);
     DB.usage.unshift({id:uid(),scope:it.scope,itemId:it.id,name:it.name,unit:it.unit,qty:q,expiry:drawnFrom,date:todayISO(),ts:now(),byId:SESSION.id,byName:SESSION.name,byRole:SESSION.role,byScope:SESSION.scope});
+    logAudit('Usage logged',`${it.name}: ${q} ${it.unit} used`,it.scope);
     save();closeModal();maybeLowNotify(it.scope);render();toast('Usage logged','good');
   };
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
@@ -4413,7 +4461,7 @@ function composeMessageModal(){
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Send');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     if(!selectedTo){err.textContent='Select someone to send to.';return;}
     const b=msgI.value.trim();if(!b){err.textContent='Write something first.';return;}
     DB.messages.push({id:uid(),fromId:SESSION.id,fromName:SESSION.name,toId:selectedTo.id,toName:selectedTo.name,body:b,ts:now(),readBy:[SESSION.id]});
@@ -4497,7 +4545,7 @@ function announceModal(existing){
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass',existing?'Save changes':'Post');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     const b=bodyI.value.trim();
     if(!b){err.textContent='Write something before posting.';return;}
     const scopeI=scopeWrap.querySelector('select');
@@ -5244,6 +5292,7 @@ function pageTemps(main){
       const ts=new Date().setHours(parseInt(parts[0])||0,parseInt(parts[1])||0,0,0);
       const log={id:uid(),scope,ts,readings,note:noteI.value.trim(),corrective:corrective||'',byId:SESSION.id,byName:SESSION.name,outOfRange:outOfRange.length>0};
       DB.tempLogs.unshift(log);
+      logAudit('Temperature logged',Object.values(readings).map(r=>r.label+': '+r.temp+'°C').join('; '),scope);
       if(outOfRange.length){
         DB.notifications=DB.notifications||[];
         DB.notifications.unshift({id:uid(),scope,text:'⚠️ Temp out of range: '+outOfRange.join(', '),type:'low',ts:now(),read:false});
@@ -5435,6 +5484,7 @@ function pageTeam(main){
     if(u.role!=='boss'&&u.id!==SESSION.id){
       const rm=el('button','btn ghost tiny','Remove');
       rm.onclick=()=>confirmModal('Remove staff?',`${u.name} (@${u.username}) will no longer be able to log in.`,()=>{
+        logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);
         DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();render();toast('Staff removed');
       });
       ra.appendChild(rm);
@@ -5474,7 +5524,7 @@ function addUserModal(defaultBranchId){
   const f=el('div');f.style.display='flex';f.style.gap='10px';f.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Add staff');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     const name=nameI.value.trim();
     const username=userI.value.trim().toLowerCase().replace(/\s+/g,'');
     const pass=passI.value;
@@ -5484,7 +5534,10 @@ function addUserModal(defaultBranchId){
     if(!username){err.textContent='Enter a username.';return;}
     if(DB.users.some(u=>String(u.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
     if(pass.length<4){err.textContent='Password needs at least 4 characters.';return;}
-    DB.users.push({id:uid(),name,username,pass,role:roleI.value,scope,branchId:branchI.value||defBranch});
+    const newStaff={id:uid(),name,username,role:roleI.value,scope,branchId:branchI.value||defBranch};
+    await setUserPassword(newStaff,pass);
+    DB.users.push(newStaff);
+    logAudit('Staff added',`${name} added as ${roleI.value} for ${scopeLabel(scope)}`,scope);
     save();renderQuickRoles();closeModal();render();toast(name+' added','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Add staff member',body,f);
@@ -5521,7 +5574,7 @@ function editStaffModal(u,defaultBranchId){
   const f=el('div');f.style.display='flex';f.style.gap='10px';f.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Save staff');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     const name=nameI.value.trim();
     const username=userI.value.trim().toLowerCase().replace(/\s+/g,'');
     const sysI=sysWrap.querySelector('select');
@@ -5529,8 +5582,15 @@ function editStaffModal(u,defaultBranchId){
     if(!username){err.textContent='Enter a username.';return;}
     if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
     if(passI.value&&passI.value.length<4){err.textContent='Password needs at least 4 characters.';return;}
+    const oldRole=u.role,oldScope=u.scope,oldName=u.name;
     u.name=name;u.username=username;u.role=roleI.value;u.scope=sysI?sysI.value:u.scope;u.branchId=branchI.value||defaultBranchId||u.branchId;
-    if(passI.value)u.pass=passI.value;
+    if(passI.value)await setUserPassword(u,passI.value);
+    const changes=[];
+    if(oldName!==u.name)changes.push('name: '+oldName+' -> '+u.name);
+    if(oldRole!==u.role)changes.push('role: '+oldRole+' -> '+u.role);
+    if(oldScope!==u.scope)changes.push('system: '+scopeLabel(oldScope)+' -> '+scopeLabel(u.scope));
+    if(passI.value)changes.push('password changed');
+    logAudit('Staff edited',`${u.name}: ${changes.join('; ')||'details saved'}`,u.scope);
     save();renderQuickRoles();closeModal();render();toast('Staff updated','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Edit staff member',body,f);
@@ -5544,7 +5604,7 @@ function changePassModal(u){
   const f=el('div');f.style.display='flex';f.style.gap='10px';f.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Update password');ok.style.flex='2';
-  ok.onclick=()=>{if(p.value.length<4){err.textContent='Use at least 4 characters.';return;}u.pass=p.value;save();renderQuickRoles();closeModal();toast('Password updated','good');};
+  ok.onclick=async()=>{if(p.value.length<4){err.textContent='Use at least 4 characters.';return;}await setUserPassword(u,p.value);logAudit('Staff password changed',`${u.name} password changed`,u.scope);save();renderQuickRoles();closeModal();toast('Password updated','good');};
   f.appendChild(cancel);f.appendChild(ok);openModal('Change password',body,f);
 }
 function changeRoleModal(u){
@@ -5559,7 +5619,9 @@ function changeRoleModal(u){
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Save role');ok.style.flex='2';
   ok.onclick=()=>{
+    const oldRole=u.role,oldScope=u.scope;
     u.role=roleI.value;u.scope=scopeI.value;
+    logAudit('Staff role changed',`${u.name}: ${oldRole}/${scopeLabel(oldScope)} -> ${u.role}/${scopeLabel(u.scope)}`,u.scope);
     save();renderQuickRoles();closeModal();render();toast('Role updated','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Change role \u2014 '+esc(u.name),body,f);
@@ -5577,6 +5639,7 @@ function pageSettings(main){
     {id:'systems',label:'Branches name',roles:['boss','incharge']},
     {id:'account',label:'General',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
+    {id:'backups',label:isBoss?'Backups & audit':'Audit log',roles:['boss','incharge']},
   ].filter(t=>t.roles.includes(SESSION.role));
 
   if(!allTabs.find(t=>t.id===SETTINGS_TAB))SETTINGS_TAB=allTabs[0].id;
@@ -5591,6 +5654,7 @@ function pageSettings(main){
 
   if(SETTINGS_TAB==='systems'&&(isBoss||isIncharge))settingsSystems(main);
   else if(SETTINGS_TAB==='data')settingsData(main);
+  else if(SETTINGS_TAB==='backups'&&(isBoss||isIncharge))settingsBackupsAudit(main);
   else settingsAccount(main);
 }
 function settingsVenue(main){
@@ -5685,6 +5749,7 @@ function settingsTeam(main){
         ok.onclick=()=>{
           u.pending=false;u.role=roleI.value;u.scope=scopeI.value;
           delete u.pendingAt;
+          logAudit('Staff approved',`${u.name} approved as ${u.role} for ${scopeLabel(u.scope)}`,u.scope);
           save();closeModal();render();
           toast(u.name+' approved as '+roleI.value,'good');
         };
@@ -5693,6 +5758,7 @@ function settingsTeam(main){
       };
       const reject=el('button','btn ghost tiny','Reject');
       reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed from the system.',()=>{
+        logAudit('Staff rejected',`${u.name} join request rejected`,u.scope||SESSION.scope);
         DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected and removed');
       });
       ra.appendChild(approve);ra.appendChild(reject);row.appendChild(ra);pCard.appendChild(row);
@@ -5720,7 +5786,7 @@ function settingsTeam(main){
       ra.appendChild(editBtn);
       if(u.role!=='boss'&&u.id!==SESSION.id){
         const rm=el('button','btn ghost tiny','Remove');
-        rm.onclick=()=>confirmModal('Remove staff?',`${u.name} will no longer be able to log in.`,()=>{DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();rTeam();toast('Staff removed');});
+        rm.onclick=()=>confirmModal('Remove staff?',`${u.name} will no longer be able to log in.`,()=>{logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();rTeam();toast('Staff removed');});
         ra.appendChild(rm);
       }
       summary.appendChild(ra);c.appendChild(summary);
@@ -5739,24 +5805,33 @@ function settingsTeam(main){
         editForm.appendChild(field('Role',roleI));
         editForm.appendChild(field('System',scopeI));
         const saveBtn=el('button','btn brass sm','Save');saveBtn.style.marginTop='8px';
-        saveBtn.onclick=()=>{
+        saveBtn.onclick=async()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
           if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          const oldRole=u.role,oldScope=u.scope,oldName=u.name;
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
-          if(passI.value.trim())u.pass=passI.value.trim();
+          if(passI.value.trim())await setUserPassword(u,passI.value.trim());
           u.role=roleI.value;u.scope=scopeI.value;
+          const changes=[];
+          if(oldName!==u.name)changes.push('name: '+oldName+' -> '+u.name);
+          if(oldRole!==u.role)changes.push('role: '+oldRole+' -> '+u.role);
+          if(oldScope!==u.scope)changes.push('system: '+scopeLabel(oldScope)+' -> '+scopeLabel(u.scope));
+          if(passI.value.trim())changes.push('password changed');
+          logAudit('Staff edited',`${u.name}: ${changes.join('; ')||'details saved'}`,u.scope);
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
         editForm.appendChild(saveBtn);
       }else{
         const saveBtn=el('button','btn brass sm','Save');saveBtn.style.marginTop='8px';
-        saveBtn.onclick=()=>{
+        saveBtn.onclick=async()=>{
           if(!nameI.value.trim()){toast('Name required','bad');return;}
           if(!userI.value.trim()){toast('Username required','bad');return;}
           if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
+          const oldName=u.name;
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
-          if(passI.value.trim())u.pass=passI.value.trim();
+          if(passI.value.trim())await setUserPassword(u,passI.value.trim());
+          logAudit('Owner account edited',`${oldName} account details saved${passI.value.trim()?' · password changed':''}`,u.scope||SCOPE);
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
         editForm.appendChild(saveBtn);
@@ -6098,7 +6173,7 @@ function settingsSystems(main){
         ra.appendChild(ed);
         if(isBoss){
           const rm=el('button','btn ghost tiny','Remove');
-          rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',()=>{DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
+          rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',()=>{logAudit('Staff removed',`${u.name} removed from ${branch.label}`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
           ra.appendChild(rm);
         }
         row.appendChild(ra);
@@ -6132,12 +6207,12 @@ function settingsSystems(main){
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=()=>{u.pending=false;u.role=roleI.value;u.scope=scopeI.value;u.branchId=branch.id;delete u.pendingAt;save();closeModal();render();toast(u.name+' approved','good');};
+        ok.onclick=()=>{u.pending=false;u.role=roleI.value;u.scope=scopeI.value;u.branchId=branch.id;delete u.pendingAt;logAudit('Staff approved',`${u.name} approved as ${u.role} for ${branch.label}`,u.scope);save();closeModal();render();toast(u.name+' approved','good');};
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
       const reject=el('button','btn ghost tiny','Reject');
-      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed.',()=>{DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected');});
+      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed.',()=>{logAudit('Staff rejected',`${u.name} join request rejected for ${branch.label}`,u.scope||SESSION.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected');});
       ra.appendChild(approve);ra.appendChild(reject);row.appendChild(ra);
       teamDiv.appendChild(row);
     });
@@ -6205,7 +6280,7 @@ function settingsAccount(main){
   pwc.appendChild(field('Current password',wrap1));pwc.appendChild(field('New password',wrap2));
   const pErr=el('div','err');pwc.appendChild(pErr);
   const pOk=el('button','btn brass','Change password');
-  pOk.onclick=()=>{if(cur.value!==SESSION.pass){pErr.textContent='Current password is incorrect.';return;}if(nw.value.length<4){pErr.textContent='Use at least 4 characters.';return;}SESSION.pass=nw.value;save();renderQuickRoles();pErr.textContent='';cur.value='';nw.value='';toast('Password changed','good');};
+  pOk.onclick=async()=>{if(!(await userPassMatches(SESSION,cur.value))){pErr.textContent='Current password is incorrect.';return;}if(nw.value.length<4){pErr.textContent='Use at least 4 characters.';return;}await setUserPassword(SESSION,nw.value);const u=DB.users.find(x=>x.id===SESSION.id);if(u)Object.assign(u,{passHash:SESSION.passHash,passSalt:SESSION.passSalt,pass:undefined});save();renderQuickRoles();pErr.textContent='';cur.value='';nw.value='';toast('Password changed','good');};
   pwc.appendChild(pOk);main.appendChild(pwc);
   // Supabase email — boss only, shows when Supabase is configured
   if(SESSION.role==='boss'&&USE_SUPABASE){
@@ -6271,7 +6346,7 @@ function settingsData(main){
         (res.warn?('\n\n⚠ '+res.warn):'\n\n✓ Integrity verified.');
       confirmModal('Restore this backup?',desc+'\n\nThis replaces ALL current data. A safety snapshot of your current data will be saved first.',()=>{
         autoSnapshot('before-import');
-        DB=res.data;save();toast('Backup restored','good');buildNav();applyBrand();render();
+        DB=res.data;logAudit('Backup restored','Imported backup file restored',SCOPE);save();toast('Backup restored','good');buildNav();applyBrand();render();
       });
     };r.readAsText(f);};
     imp.onclick=()=>impFile.click();
@@ -6289,7 +6364,7 @@ function settingsData(main){
         const row=el('button','btn ghost sm');row.style.cssText='display:block;width:100%;text-align:left;margin-bottom:6px';
         const c=s.data&&s.data.items?s.data.items.length:0;
         row.textContent=new Date(s.at).toLocaleString()+'  ·  '+s.reason+'  ·  '+c+' items';
-        row.onclick=()=>{autoSnapshot('before-snapshot-restore');DB=s.data;save();closeModal();buildNav();applyBrand();render();toast('Snapshot restored','good');};
+        row.onclick=()=>{autoSnapshot('before-snapshot-restore');DB=s.data;logAudit('Snapshot restored','Restored local snapshot from '+new Date(s.at).toLocaleString(),SCOPE);save();closeModal();buildNav();applyBrand();render();toast('Snapshot restored','good');};
         body.appendChild(row);
       });
       const foot=el('div');foot.style.width='100%';const cx=el('button','btn ghost','Cancel');cx.style.width='100%';cx.onclick=closeModal;foot.appendChild(cx);
@@ -6297,7 +6372,7 @@ function settingsData(main){
     };
     dz.appendChild(snapBtn);
     const reset=el('button','btn ghost sm','Reset to demo data');reset.style.marginTop='8px';reset.style.display='block';
-    reset.onclick=()=>confirmModal('Reset everything?','All data will be replaced with demo data. A safety snapshot is saved first.',()=>{autoSnapshot('before-reset');DB=seed();save();buildNav();applyBrand();render();toast('Reset to demo');});
+    reset.onclick=()=>confirmModal('Reset everything?','All data will be replaced with demo data. A safety snapshot is saved first.',()=>{autoSnapshot('before-reset');DB=seed();logAudit('Data reset','Reset to demo data',SCOPE);save();buildNav();applyBrand();render();toast('Reset to demo');});
     dz.appendChild(reset);
     const cleanupBtn=el('button','btn ghost sm','Clean up old systems');cleanupBtn.style.marginTop='8px';cleanupBtn.style.display='block';
     cleanupBtn.onclick=()=>{
@@ -6330,12 +6405,85 @@ function settingsData(main){
         Cloud data is designed for owner-only access through Supabase Row Level Security.
         Staff join requests use a separate approval queue and do not read or write the private business database.
         Backups include metadata plus a SHA-256 integrity check before restore.
+        Plain passwords are redacted from cloud backups and new staff passwords are stored as hashes.
       </div>
     </div>
     <span class="chip ok" style="font-size:11px">Paid-ready controls</span>
   </div>
-  <div class="suptag" style="margin-top:10px">Run <b>supabase-security.sql</b> in Supabase SQL Editor to enforce the database rules.</div>`;
+  <div class="suptag" style="margin-top:10px">Run <b>supabase-security.sql</b> in Supabase SQL Editor to enforce the database rules. Final paid-product hardening should move every staff login to Supabase Auth.</div>`;
   main.appendChild(trust);
+}
+function settingsBackupsAudit(main){
+  const isBoss=SESSION.role==='boss';
+  const isIncharge=SESSION.role==='incharge';
+  if(!isBoss&&!isIncharge){main.appendChild(emptyState('🔒','Owner or in-charge only.'));return;}
+  if(isBoss){
+    createDailyCloudBackup('daily');
+    const list=(DB.cloudBackups||[]).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
+    const top=el('div','card pad');top.style.marginBottom='14px';
+    const last=list[0];
+    top.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+      <div><b>Automatic cloud backups</b>
+        <div class="suptag" style="margin-top:6px;line-height:1.6">
+          Stored keeps one backup per day for this business and retains the latest 30 backups.
+          ${USE_SUPABASE?'Because cloud sync is on, this backup history is saved with the business database.':'Cloud sync is off, so these backups stay on this device until Supabase is connected.'}
+        </div>
+      </div>
+      <span class="chip ok" style="font-size:11px">${list.length}/30 saved</span>
+    </div>
+    <div class="suptag" style="margin-top:10px">Last backup: ${last?new Date(last.at).toLocaleString():'none yet'}</div>`;
+    const actions=el('div','row-actions');actions.style.cssText='margin-top:12px;justify-content:flex-start;flex-wrap:wrap';
+    const make=el('button','btn brass sm','Create backup now');
+    make.onclick=()=>{manualCloudBackup('manual');render();toast('Backup created','good');};
+    const dlNow=el('button','btn ghost sm','Download current backup');
+    dlNow.onclick=()=>downloadBackupRecord({at:new Date().toISOString(),reason:'current',data:backupDataSnapshot()});
+    actions.appendChild(make);actions.appendChild(dlNow);top.appendChild(actions);main.appendChild(top);
+
+    const hist=el('div','card pad');hist.style.marginBottom='14px';
+    hist.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">30-day backup history</div>';
+    if(!list.length)hist.appendChild(el('div','suptag','No backups yet. A daily backup is created when the business data is saved.'));
+    else{
+      const tw=el('div','tablewrap');const t=el('table');
+      t.innerHTML='<thead><tr><th>Backup</th><th>Type</th><th>Counts</th><th>Checksum</th><th></th></tr></thead>';
+      const tb=el('tbody');
+      list.forEach(b=>{
+        const tr=el('tr');
+        tr.innerHTML=`<td><b>${fmtDate(b.at)} ${fmtTime(b.at)}</b><div class="suptag">By ${esc(b.byName||'System')}</div></td>
+          <td>${esc(b.kind||'backup')}</td>
+          <td>${b.counts?.items||0} items · ${b.counts?.users||0} users · ${b.counts?.deliveries||0} deliveries</td>
+          <td><span class="suptag">${esc(b.checksum||'')}</span></td><td class="dna-cell"></td>`;
+        const ra=el('div','row-actions');
+        const dl=el('button','btn ghost tiny','Download');dl.onclick=()=>downloadBackupRecord(b);
+        const rs=el('button','btn ghost tiny','Restore');rs.onclick=()=>restoreBackupRecord(b);
+        ra.appendChild(dl);ra.appendChild(rs);tr.querySelector('.dna-cell').appendChild(ra);tb.appendChild(tr);
+      });
+      t.appendChild(tb);tw.appendChild(t);hist.appendChild(tw);
+    }
+    main.appendChild(hist);
+  }
+
+  const audit=el('div','card pad');
+  const rows=auditRows();
+  audit.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+    <div><b>Audit log</b><div class="suptag" style="margin-top:6px">Tracks stock edits, quantity changes, deliveries, usage, temperature logs, staff changes and restore actions.${isIncharge?' Showing your branch only.':''}</div></div>
+    <span class="chip ${rows.length?'ok':'warn'}" style="font-size:11px">${rows.length} entries</span>
+  </div>`;
+  const auditBtns=el('div','row-actions');auditBtns.style.cssText='margin-top:12px;justify-content:flex-start;flex-wrap:wrap';
+  const csv=el('button','btn ghost sm','Export CSV');csv.onclick=exportAuditCSV;
+  const pdf=el('button','btn ghost sm','Export PDF');pdf.onclick=()=>exportAuditPDF().catch(e=>toast('Could not export PDF: '+(e.message||e),'bad'));
+  auditBtns.appendChild(csv);auditBtns.appendChild(pdf);audit.appendChild(auditBtns);
+  if(rows.length){
+    const tw=el('div','tablewrap');tw.style.marginTop='12px';const t=el('table');
+    t.innerHTML='<thead><tr><th>When</th><th>User</th><th>System</th><th>Action</th><th>Detail</th></tr></thead>';
+    const tb=el('tbody');
+    rows.slice(0,80).forEach(r=>{
+      const tr=el('tr');
+      tr.innerHTML=`<td>${fmtDate(r.ts)} ${fmtTime(r.ts)}</td><td>${esc(r.byName||'')}<div class="suptag">${esc(r.byRole||'')}</div></td><td>${esc(r.scope?scopeLabel(r.scope):'')}</td><td><b>${esc(r.action||'')}</b></td><td>${esc(r.detail||'')}</td>`;
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);tw.appendChild(t);audit.appendChild(tw);
+  }
+  main.appendChild(audit);
 }
 
 function peekWrap(inp){
@@ -6357,6 +6505,9 @@ function stableStringify(v){
   const keys=Object.keys(v).sort();
   return '{'+keys.map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',')+'}';
 }
+function backupDataSnapshot(){
+  return dataWithoutPlainPasswords(DB||{});
+}
 // Small local checksum for rolling browser snapshots. Downloaded backups use
 // SHA-256 below; this stays only for quick local snapshot labels.
 function checksumOf(obj){
@@ -6376,7 +6527,7 @@ async function sha256Hex(str){
 }
 async function auditChecksumOf(obj){return sha256Hex(stableStringify(obj));}
 async function buildBackupEnvelope(){
-  const data=DB;
+  const data=backupDataSnapshot();
   const checksum=await auditChecksumOf(data);
   return {
     _stockline_backup:BACKUP_FORMAT,
@@ -6397,6 +6548,113 @@ async function buildBackupEnvelope(){
     checksum,
     data
   };
+}
+function createDailyCloudBackup(reason){
+  if(!DB||!DB.items||!DB.users)return;
+  DB.cloudBackups=DB.cloudBackups||[];
+  const today=todayISO();
+  if(DB.cloudBackups.some(b=>b.date===today&&b.kind==='daily'))return;
+  const data=backupDataSnapshot();
+  const stamp=new Date().toISOString();
+  DB.cloudBackups.unshift({
+    id:uid(),
+    kind:'daily',
+    date:today,
+    at:stamp,
+    reason:reason||'daily',
+    byId:SESSION?.id||'system',
+    byName:SESSION?.name||'System',
+    checksum:checksumOf(data),
+    counts:{items:(data.items||[]).length,users:(data.users||[]).length,suppliers:(data.suppliers||[]).length,deliveries:(data.deliveries||[]).length},
+    data
+  });
+  DB.cloudBackups=DB.cloudBackups.slice(0,30);
+}
+function manualCloudBackup(reason){
+  DB.cloudBackups=DB.cloudBackups||[];
+  const data=backupDataSnapshot();
+  const rec={
+    id:uid(),kind:'manual',date:todayISO(),at:new Date().toISOString(),reason:reason||'manual',
+    byId:SESSION?.id||'system',byName:SESSION?.name||'System',checksum:checksumOf(data),
+    counts:{items:(data.items||[]).length,users:(data.users||[]).length,suppliers:(data.suppliers||[]).length,deliveries:(data.deliveries||[]).length},
+    data
+  };
+  DB.cloudBackups.unshift(rec);
+  DB.cloudBackups=DB.cloudBackups.slice(0,30);
+  logAudit('Backup created',(reason||'manual')+' backup created',SCOPE);
+  save();
+  return rec;
+}
+async function downloadBackupRecord(rec){
+  const data=rec?.data||backupDataSnapshot();
+  const checksum=await auditChecksumOf(data);
+  const env={_stockline_backup:BACKUP_FORMAT,meta:{
+    exportedAt:new Date().toISOString(),backupAt:rec?.at||'',backupReason:rec?.reason||'download',
+    exportedBy:(SESSION&&(SESSION.name||SESSION.username))||'unknown',role:(SESSION&&SESSION.role)||'unknown',
+    appVersion:(typeof APP_VERSION!=='undefined')?APP_VERSION:'?',establishment:(DB.venue&&DB.venue.name)||(DB.brand&&DB.brand.appName)||'',
+    counts:{items:(data.items||[]).length,users:(data.users||[]).length,suppliers:(data.suppliers||[]).length,deliveries:(data.deliveries||[]).length}
+  },checksumAlg:(window.crypto&&crypto.subtle&&window.TextEncoder)?'SHA-256':'FNV-1a-32',checksum,data};
+  const blob=new Blob([JSON.stringify(env,null,2)],{type:'application/json'});
+  const stamp=(rec?.at||new Date().toISOString()).slice(0,19).replace(/[:T]/g,'-');
+  const a=el('a');a.href=URL.createObjectURL(blob);
+  a.download=((DB.brand&&DB.brand.appName)||'stored')+'-backup-'+stamp+'.json';a.click();
+  toast('Backup downloaded','good');
+}
+function restoreBackupRecord(rec){
+  if(!rec||!rec.data){toast('Backup is missing data','bad');return;}
+  confirmModal('Restore this backup?','This replaces ALL current data with the backup from '+new Date(rec.at).toLocaleString()+'. A safety backup of your current data will be saved first.',()=>{
+    const safety=manualCloudBackup('before-restore');
+    const oldHistory=(DB.cloudBackups||[]).slice(0,30);
+    DB=JSON.parse(JSON.stringify(rec.data));
+    DB.cloudBackups=[safety,...oldHistory.filter(b=>b.id!==safety.id)].slice(0,30);
+    logAudit('Backup restored','Restored backup from '+new Date(rec.at).toLocaleString(),SCOPE);
+    save();buildNav();applyBrand();render();toast('Backup restored','good');
+  });
+}
+function auditRows(){
+  let rows=(DB.auditLog||[]).slice();
+  if(SESSION?.role==='incharge'){
+    const allowed=branchSystemsForUser().map(s=>s.id);
+    rows=rows.filter(r=>!r.scope||allowed.includes(r.scope)||r.byId===SESSION.id);
+  }
+  return rows.sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function exportAuditCSV(){
+  const rows=auditRows();
+  const header=['Date','Time','User','Role','System','Action','Detail'];
+  const csv=[header,...rows.map(r=>[
+    fmtDate(r.ts),fmtTime(r.ts),r.byName||'',r.byRole||'',r.scope?scopeLabel(r.scope):'',r.action||'',r.detail||''
+  ])].map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=el('a');a.href=URL.createObjectURL(blob);
+  a.download=((DB.brand&&DB.brand.appName)||'stored')+'-audit-log-'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+  toast('Audit CSV exported','good');
+}
+async function exportAuditPDF(){
+  await loadJsPDF();
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=38;let y=M;
+  function text(t,x,yy,size,style,color){doc.setFont('helvetica',style||'normal');doc.setFontSize(size||9);if(color)doc.setTextColor(...color);else doc.setTextColor(30,30,30);doc.text(String(t),x,yy);}
+  function pageBreak(n){if(y+n>H-M){doc.addPage();y=M;}}
+  text('Audit log',M,y,18,'bold');y+=22;
+  text(((DB.venue&&DB.venue.name)||(DB.brand&&DB.brand.appName)||'Stored')+' · exported '+new Date().toLocaleString(),M,y,9,'normal',[90,90,90]);y+=20;
+  text('When',M,y,8,'bold');text('User',M+92,y,8,'bold');text('System',M+170,y,8,'bold');text('Action',M+250,y,8,'bold');text('Detail',M+350,y,8,'bold');y+=10;
+  doc.setDrawColor(220);doc.line(M,y,W-M,y);y+=10;
+  auditRows().slice(0,500).forEach(r=>{
+    pageBreak(28);
+    text(fmtDate(r.ts)+' '+fmtTime(r.ts),M,y,7);
+    text(r.byName||'',M+92,y,7);
+    text(r.scope?scopeLabel(r.scope):'',M+170,y,7);
+    text(r.action||'',M+250,y,7,'bold');
+    const lines=doc.splitTextToSize(String(r.detail||''),W-M-350);
+    lines.slice(0,2).forEach((l,i)=>text(l,M+350,y+(i*9),7));
+    y+=Math.max(14,lines.slice(0,2).length*9+4);
+  });
+  const pages=doc.internal.getNumberOfPages();
+  for(let p=1;p<=pages;p++){doc.setPage(p);text('Generated by Stored',M,H-20,8,'normal',[150,150,150]);text('Page '+p+' of '+pages,W-M-50,H-20,8,'normal',[150,150,150]);}
+  doc.save(((DB.brand&&DB.brand.appName)||'stored')+'-audit-log-'+new Date().toISOString().slice(0,10)+'.pdf');
+  toast('Audit PDF exported','good');
 }
 // Validate an imported object. Returns {ok, data, warn}. Accepts both the new
 // envelope format and a bare legacy DB object (older backups).
@@ -6499,7 +6757,7 @@ async function checkPendingRequests(){
         const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
         if(!DB.users.find(u=>u.id===req.id)){
-          DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
+          DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
           changed=true;
           // Show notification
           notify(SESSION.role==='boss'?'boss':SESSION.scope,req.name+' has requested to join. Approve in Settings \u2192 Team.','approve',{page:'settings'});
