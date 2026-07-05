@@ -3810,11 +3810,11 @@ function pageOrder(main){
 function buildOrderTable(scope,items,canMark,isOrdered){
   const tw=el('div','tablewrap');
   const t=el('table');
-  t.innerHTML=`<thead><tr>${canMark?'<th style="width:32px"></th>':''}<th>Item</th><th>Supplier</th><th>Category</th><th>On hand</th><th>Min</th><th>Suggested</th><th>Status</th></tr></thead>`;
+  t.innerHTML=`<thead><tr>${canMark?'<th style="width:32px"></th>':''}<th>Item</th><th>Supplier</th><th>Category</th><th>On hand</th><th>Min</th><th>Order qty</th><th>Status</th></tr></thead>`;
   const tb=el('tbody');
   items.forEach(i=>{
     const sup=supById(i.supplierId);
-    const sugg=Math.max(i.par-i.qty,0);
+    const sugg=suggestedOrderQty(i);
     const tr=el('tr');
     if(HIGHLIGHT_ITEM&&i.name.toLowerCase().includes(HIGHLIGHT_ITEM.toLowerCase()))tr.className='row-highlight';
     let exp='';
@@ -3829,9 +3829,21 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     cells+=`<td>${esc(i.category||'\u2014')}</td>`;
     cells+=`<td class="qty-cell">${i.qty} ${esc(i.unit)}</td>`;
     cells+=`<td class="qty-cell">${i.par} ${esc(i.unit)}</td>`;
-    cells+=`<td class="qty-cell">${sugg} ${esc(i.unit)}</td>`;
+    cells+=`<td class="qty-cell orderqty-cell"></td>`;
     cells+=`<td>${isOrdered?`<span class="chip ok" style="font-size:11px">Ordered</span>${exp}`:'<span class="suptag">Pending</span>'}</td>`;
     tr.innerHTML=cells;
+    const qtyWrap=el('div');qtyWrap.style.cssText='display:flex;align-items:center;gap:6px;min-width:120px';
+    const qtyI=input(i.orderQty??sugg,'','number');
+    qtyI.min='0';qtyI.step='any';qtyI.style.cssText='width:76px;padding:8px 9px;border-radius:8px';
+    qtyI.onchange=()=>{
+      const val=parseFloat(qtyI.value);
+      if(Number.isFinite(val)&&val>=0)i.orderQty=val;
+      else{delete i.orderQty;qtyI.value=sugg;}
+      save();
+      toast('Order quantity updated','good');
+    };
+    qtyWrap.appendChild(qtyI);qtyWrap.appendChild(el('span','suptag',i.unit||''));
+    tr.querySelector('.orderqty-cell').appendChild(qtyWrap);
     if(canMark){
       const cb=el('input');cb.type='checkbox';cb.checked=!!i.ordered;cb.className='tick';
       cb.title=isOrdered?'Untick to move back':'Tick once ordered';
@@ -3841,6 +3853,11 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     tb.appendChild(tr);
   });
   t.appendChild(tb);tw.appendChild(t);return tw;
+}
+function suggestedOrderQty(item){
+  const suggested=Math.max((+item.par||0)-(+item.qty||0),0);
+  const custom=parseFloat(item.orderQty);
+  return Number.isFinite(custom)&&custom>=0?custom:suggested;
 }
 function orderDraftItems(scope,mode){
   let items=activeItems(scope).filter(i=>i.qty<i.par);
@@ -3952,7 +3969,7 @@ function renderOrderDraftPDF(scope,mode,note,deliveryDate,message){
     doc.setDrawColor(220);doc.line(M,y,W-M,y);y+=10;
     supplierRows.forEach(({item,mode})=>{
       pageBreak(24);
-      const suggested=Math.max(item.par-item.qty,0);
+      const suggested=suggestedOrderQty(item);
       text(suggested,M,y,9,'bold',mode==='awaiting'?[40,120,80]:[30,30,30]);
       text(item.unit||'',M+60,y,9,'normal');
       text(item.name,M+120,y,9,'normal');
