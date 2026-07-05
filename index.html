@@ -1410,10 +1410,10 @@ function showRegister(push=true){
         // system ids). Never read the private establishment data blob anonymously.
         let data=null,error=null;
         {
-          const vresp=await anonClient.from('establishments_public').select('id,name,branches');
+          const vresp=await anonClient.from('establishments_public').select('id,name,branches,systems');
           if(!vresp.error&&vresp.data){
             // Shape view rows to match what the loop below expects.
-            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[]}}));
+            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[],systems:e.systems||[]}}));
           }else{
             error=vresp.error||{message:'Public branch directory is not available.'};
           }
@@ -1423,12 +1423,18 @@ function showRegister(push=true){
           data.forEach(e=>{
             try{
               const d=e.data||{};
+              const allSystems=Array.isArray(d.systems)?d.systems:[];
               let bs=[...(d.branches||[])];
               if(!bs.find(b=>b.id==='branch_1')){
                 bs.unshift({id:'branch_1',label:d.venue?.name||e.name||d.brand?.appName||'Main Branch',short:'MAIN'});
               }
               bs.forEach(b=>{
-                const sysIds=Array.isArray(b.systemIds)?b.systemIds:[];
+                // Prefer systemIds embedded in the branch; otherwise derive from
+                // the flat systems list by matching branchId (covers synthesized branch_1).
+                let sysIds=Array.isArray(b.systemIds)?b.systemIds:[];
+                if(!sysIds.length&&allSystems.length){
+                  sysIds=allSystems.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
+                }
                 allBranches.push({estId:e.id,branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds});
               });
             }catch(err){
