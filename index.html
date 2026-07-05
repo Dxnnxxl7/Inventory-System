@@ -317,6 +317,19 @@ tr:last-child td{border-bottom:none}
 .empty{padding:46px 20px;text-align:center;color:var(--muted);font-family:'Avenir Next',sans-serif}
 .empty .big{font-size:38px;margin-bottom:8px;opacity:.5}
 .empty .act{margin-top:14px}
+.today-hero{margin-bottom:14px;background:linear-gradient(180deg,#fffdf8,#fff);border-color:#dccfb9}
+.today-hero h3{font-size:26px;margin-bottom:4px}
+.today-actions{display:grid;gap:10px;margin-bottom:16px}
+.today-action{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--card);box-shadow:0 4px 16px rgba(20,17,13,.05);cursor:pointer}
+.today-action:hover{background:var(--paper)}
+.today-action b{font-family:'Avenir Next',sans-serif;font-size:14px}
+.today-action .left{display:flex;align-items:flex-start;gap:12px;min-width:0}
+.today-action .mark{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:rgba(181,134,47,.14);font-size:18px;flex:none}
+.today-action.bad .mark{background:rgba(168,71,46,.13)}
+.today-action.ok .mark{background:rgba(63,95,72,.13)}
+.today-action .go{font-family:'Avenir Next',sans-serif;font-size:20px;color:var(--muted)}
+.today-mini{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:520px){.today-mini{grid-template-columns:repeat(2,1fr)}.today-action{padding:12px}}
 
 /* need-to-order: tick + progress bar */
 .tickcell{width:34px;text-align:center}
@@ -1043,7 +1056,7 @@ function unsubscribeRealtime(){
 
 let SESSION=null;     // current user
 let SCOPE='kitchen';  // active scope for in-charge views / boss tabs
-let CURRENT='stocks';
+let CURRENT='today';
 let HIST_TAB='deliveries'; // active sub-tab on the merged History page
 let DELIV_SUBTAB='deliveries'; // active sub-tab on Deliveries page
 let ORDER_SUBTAB='order'; // active sub-tab on Need to order page
@@ -1085,7 +1098,7 @@ function saveSessionState(){
 }
 function applySavedSessionState(saved){
   if(!saved)return;
-  CURRENT=saved.page||CURRENT||'stocks';
+  CURRENT=saved.page||CURRENT||'today';
   if(saved.branchId)BRANCH_TAB=saved.branchId;
   if(saved.scope)SCOPE=saved.scope;
   if(saved.histTab)HIST_TAB=saved.histTab;
@@ -1839,7 +1852,7 @@ function finalizeLogin(){
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';$('#app').style.display='block';
   if(SESSION.role==='boss')subscribeRealtime();
-  CURRENT='stocks';saveSessionState();buildNav();renderBell();render();
+  CURRENT='today';saveSessionState();buildNav();renderBell();render();
   checkCutoffs();
   showLoginGreeting();
 }
@@ -2003,6 +2016,7 @@ applyBrand();renderQuickRoles();
 function navConfig(){
   const role=SESSION.role;
   const inOrder=[
+    {id:'today',ic:'☑️',label:'Today'},
     {id:'stocks',ic:'📦',label:'Stocks'},
     {id:'deliveries',ic:'🚚',label:'Deliveries'},
     {id:'order',ic:'🛒',label:'Need to order'},
@@ -2025,6 +2039,7 @@ function navConfig(){
   }
   // staff
   return {main:[
+    {id:'today',ic:'☑️',label:'Today'},
     {id:'stocks',ic:'📦',label:'Stocks'},
     {id:'deliveries',ic:'🚚',label:'Deliveries'},
     {id:'order',ic:'🛒',label:'Need to order'},
@@ -2110,6 +2125,10 @@ function buildNav(){
   const mkItem=(it)=>{
     const a=el('div','navitem'+(CURRENT===it.id?' active':''));
     a.innerHTML=`<span class="ic">${it.ic}</span><span>${it.label}</span>`;
+    if(it.id==='today'){
+      const tc=todayActions().length;
+      if(tc)a.innerHTML+=`<span class="nbadge">${tc}</span>`;
+    }
     // approval badge on stocks for in-charge
     if(SESSION.role==='incharge'&&it.id==='stocks'){
       const pc=pendingCountFor(SESSION.scope);
@@ -2391,12 +2410,12 @@ function render(){
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
   saveSessionState();
   const routes={
-    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,compliance:pageCompliance,
+    today:pageToday,stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,compliance:pageCompliance,
     usage:pageUsage,temps:pageTemps,compliance:pageCompliance,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
   main.innerHTML='';
-  (routes[CURRENT]||pageStocks)(main);
+  (routes[CURRENT]||pageToday)(main);
 }
 
 /* scope tabs (boss everywhere, in-charge view-only label) */
@@ -2500,6 +2519,91 @@ function searchBar(main,placeholder){
 }
 
 /* ---------- DASHBOARD ---------- */
+function todayScopes(){
+  const systems=branchSystemsForUser();
+  if(SESSION.role==='staff')return systems.length?systems:[(DB.systems||[]).find(s=>s.id===SESSION.scope)].filter(Boolean);
+  return systems.length?systems:visibleSystems();
+}
+function goToday(dest){
+  if(dest.scope)SCOPE=dest.scope;
+  if(dest.subtab){
+    if(dest.page==='stocks')STOCKS_SUBTAB=dest.subtab;
+    if(dest.page==='order')ORDER_SUBTAB=dest.subtab;
+    if(dest.page==='deliveries')DELIV_SUBTAB=dest.subtab;
+  }
+  CURRENT=dest.page;buildNav();render();
+}
+function todayActions(){
+  const scopes=todayScopes().map(s=>s.id);
+  const actions=[];
+  const add=(priority,mark,tone,title,sub,dest)=>actions.push({priority,mark,tone,title,sub,dest});
+  const unreadAnn=unreadAnnouncements();
+  if(unreadAnn)add(8,'📣','bad',unreadAnn+' announcement'+(unreadAnn===1?'':'s')+' unread','Check owner updates before service.',{page:'announce'});
+  const unreadMsg=(DB.messages||[]).filter(m=>m.toId===SESSION.id&&!(m.readBy||[]).includes(SESSION.id)).length;
+  if(unreadMsg)add(8,'💬','bad',unreadMsg+' message'+(unreadMsg===1?'':'s')+' unread','Reply or action team messages.',{page:'messages'});
+  if(['boss','incharge'].includes(SESSION.role)){
+    const pending=(DB.pending||[]).filter(p=>scopes.includes(p.scope));
+    if(pending.length)add(9,'👤','bad',pending.length+' item approval'+(pending.length===1?'':'s'),'New delivery items waiting to be approved into stock.',{page:'stocks',subtab:'stocks',scope:pending[0].scope});
+  }
+  scopes.forEach(scope=>{
+    const label=scopeLabel(scope);
+    const items=activeItems(scope);
+    const expired=items.filter(i=>i.qty>0&&i.expiry&&daysUntil(i.expiry)<0);
+    if(expired.length)add(10,'⚠️','bad',expired.length+' expired item'+(expired.length===1?'':'s')+' in '+label,'Remove, mark used, or record corrective action.',{page:'stocks',subtab:'expiring',scope});
+    const low=items.filter(i=>i.qty<i.par&&!i.ordered);
+    if(low.length)add(7,'🛒','',low.length+' item'+(low.length===1?'':'s')+' to order in '+label,'Review quantities and export supplier PDFs.',{page:'order',subtab:'order',scope});
+    const awaiting=items.filter(i=>i.qty<i.par&&i.ordered);
+    if(awaiting.length)add(6,'🚚','',awaiting.length+' awaiting delivery in '+label,'Check what was contacted but not received yet.',{page:'order',subtab:'upcoming',scope});
+    const expiring=expiringItems(scope);
+    if(expiring.length)add(5,'⏳','',expiring.length+' expiring soon in '+label,'Use first, transfer, or plan before it becomes waste.',{page:'stocks',subtab:'expiring',scope});
+    const comp=typeof complianceStatus==='function'?complianceStatus(scope,todayISO()):'none';
+    if(comp==='attention')add(8,'✅','bad','Compliance check missed in '+label,'Complete HACCP checks and record corrective action if needed.',{page:'compliance',scope});
+    else if(comp==='pending')add(5,'✅','','Compliance checks due in '+label,'Finish today’s HACCP checklist.',{page:'compliance',scope});
+    const stores=(DB.storeTypes?.[scope]||[]).filter(s=>s.id!=='dry');
+    const start=new Date().setHours(0,0,0,0);
+    const tempToday=(DB.tempLogs||[]).some(l=>l.scope===scope&&l.ts>=start);
+    if(stores.length&&!tempToday)add(6,'🌡️','','No temperatures logged for '+label,'Record fridge, freezer or cool-room temperatures.',{page:'temps',scope});
+  });
+  return actions.sort((a,b)=>b.priority-a.priority).slice(0,5);
+}
+function pageToday(main){
+  const scopes=todayScopes().map(s=>s.id);
+  const actions=todayActions();
+  const items=scopes.flatMap(scope=>activeItems(scope));
+  const low=items.filter(i=>i.qty<i.par&&!i.ordered).length;
+  const expired=items.filter(i=>i.qty>0&&i.expiry&&daysUntil(i.expiry)<0).length;
+  const awaiting=items.filter(i=>i.qty<i.par&&i.ordered).length;
+  const unread=unreadAnnouncements()+(DB.messages||[]).filter(m=>m.toId===SESSION.id&&!(m.readBy||[]).includes(SESSION.id)).length;
+  const name=(SESSION.name||'').split(' ')[0]||'there';
+  main.appendChild(headEl('Daily command','Today','The main things that need attention before service.'));
+  const hero=el('div','card pad today-hero no-filter');
+  hero.innerHTML='<h3>Morning, '+esc(name)+'.</h3><div class="suptag">'+(actions.length?'Here are the '+actions.length+' things to look at first.':'Nothing urgent right now. Keep service moving.')+'</div>';
+  main.appendChild(hero);
+  const mini=el('div','today-mini no-filter');
+  [
+    ['To order',low],
+    ['Expired',expired],
+    ['Awaiting',awaiting],
+    ['Unread',unread]
+  ].forEach(([k,v])=>{
+    const c=el('div','card stat');
+    c.innerHTML='<div class="k">'+esc(k)+'</div><div class="v">'+v+'</div>';
+    mini.appendChild(c);
+  });
+  main.appendChild(mini);
+  const wrap=el('div','today-actions');
+  if(!actions.length){
+    main.appendChild(emptyState('✓','No urgent actions right now.'));
+    return;
+  }
+  actions.forEach(a=>{
+    const row=el('div','today-action '+(a.tone||''));
+    row.innerHTML='<div class="left"><div class="mark">'+a.mark+'</div><div><b>'+esc(a.title)+'</b><div class="suptag" style="margin-top:3px">'+esc(a.sub)+'</div></div></div><div class="go">›</div>';
+    row.onclick=()=>goToday(a.dest);
+    wrap.appendChild(row);
+  });
+  main.appendChild(wrap);
+}
 function scopeSummaryCard(scope,hideLink){
   const items=activeItems(scope);
   const low=items.filter(i=>i.qty<i.par&&i.qty>0).length;
