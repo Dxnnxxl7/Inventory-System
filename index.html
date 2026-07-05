@@ -1625,16 +1625,21 @@ async function doRegister(){
           const oldPass=Object.assign({},noAuth,{pass:fallbackPass});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
           const minimal=Object.assign({},oldPass);delete minimal.pass;variants.push(minimal);
           let pendingError=null;
+          let alreadyQueued=false;
           for(const payload of variants){
             const {error}=await client.from('pending_requests').insert(payload);
             pendingError=error;
             if(!error){pendingError=null;break;}
             const msg=String(error.message||'').toLowerCase();
+            if(msg.includes('duplicate key')||msg.includes('pending_requests_pkey')||String(error.code||'')==='23505'){
+              alreadyQueued=true;pendingError=null;break;
+            }
             const schemaProblem=msg.includes('could not find')||msg.includes('schema cache')||msg.includes('column')||msg.includes('pass_hash')||msg.includes('auth_user_id')||msg.includes("'pass'");
             if(!schemaProblem)break;
           }
           if(pendingError)throw pendingError;
           queued=true;
+          if(alreadyQueued)$('#regMsg').textContent='Your request is already waiting for owner approval.';
         }
       }catch(e){
         console.warn('Supabase pending save failed:',e);
@@ -1660,12 +1665,13 @@ async function doRegister(){
       saveEst(selectedEstId,estDb);
     }
     if(USE_SUPABASE){try{await sbSignOut();}catch(e){}}
+    const requestAlreadyQueued=$('#regMsg').textContent.includes('already waiting');
     $('#register').style.display='none';$('#regBtn').disabled=false;
     $('#auth').style.display='flex';
     $('#authMsg').textContent='';
     const pm=el('div');
     pm.style.cssText='background:#fff9e6;border:1px solid #f0c040;padding:14px;border-radius:10px;text-align:center;font-size:13px;margin-top:12px;color:#7a5c00;line-height:1.5';
-    pm.textContent=authId?'\u2713 Request sent! The owner will review and approve your access shortly. You can sign in once approved.':'\u2713 Request sent! The owner will review and approve your access shortly. You can sign in once approved.';
+    pm.textContent=requestAlreadyQueued?'\u2713 Your request is already waiting for owner approval.':(authId?'\u2713 Request sent! The owner will review and approve your access shortly. You can sign in once approved.':'\u2713 Request sent! The owner will review and approve your access shortly. You can sign in once approved.');
     $('#auth').querySelector('.auth-card').appendChild(pm);
     setTimeout(()=>{try{pm.remove();}catch(e){}},12000);
   }
