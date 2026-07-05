@@ -1609,9 +1609,15 @@ async function doRegister(){
         }else authData=retry.data;
       }else if(sign.error){
         const msg=String(sign.error.message||'').toLowerCase();
-        if(msg.includes('rate limit')||msg.includes('email rate'))authLimited=true;
-        else{$('#regMsg').textContent=sign.error.message;$('#regBtn').disabled=false;return;}
+        const status=sign.error.status||sign.error.code;
+        if(msg.includes('rate limit')||msg.includes('email rate')||msg.includes('too many')||String(status)==='429')authLimited=true;
+        else{$('#regMsg').textContent=sign.error.message||('Sign up failed (status '+(status||'unknown')+'). Check Supabase auth settings.');$('#regBtn').disabled=false;return;}
       }else authData=sign.data;
+    }
+    if(authLimited){
+      $('#regMsg').textContent='Too many signup attempts right now (rate limit). Please wait about an hour and try again, or disable email confirmation in your Supabase settings.';
+      $('#regBtn').disabled=false;
+      return;
     }
     const authId=authData?.user?.id||SUPABASE_USER?.id||'';
     const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:!!authId};
