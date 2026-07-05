@@ -5972,8 +5972,17 @@ function settingsVenue(main){
 /* ---- Team ---- */
 async function approveStaffUser(u,role,scope,branchId,label){
   if(!u.authId&&!u.passHash){toast('This old request is missing login data. Reject it and ask them to request again.','bad');return false;}
+  // Approving a real (email) account writes to the cloud, which requires the
+  // OWNER to be signed in with their owner email — not the local demo login.
+  if(USE_SUPABASE&&u.authId&&!SUPABASE_USER){
+    toast('To approve this person, sign out and log in with your owner email first.','bad');
+    return false;
+  }
   let fallback=!u.authId;
   if(!u.username)u.username=String(u.email||'').split('@')[0]||('user_'+String(u.id||'').slice(0,6));
+  // Snapshot prior state so a failed cloud write can be rolled back — otherwise
+  // the user silently disappears from Pending on screen without being approved.
+  const prior={pending:u.pending,role:u.role,scope:u.scope,branchId:u.branchId,authRequired:u.authRequired,pendingAt:u.pendingAt};
   u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
   delete u.pendingAt;
   if(USE_SUPABASE&&u.authId){
@@ -5981,7 +5990,11 @@ async function approveStaffUser(u,role,scope,branchId,label){
     if(error){
       console.warn('Staff membership:',error);
       if(u.passHash){u.authRequired=false;fallback=true;toast('Approved. This person can log in now — finish account setup to enable secure email login.','warn');}
-      else{toast('Couldn\u2019t save this approval to the database. Ask the owner to run the latest setup SQL (staff_members table), then approve again.','bad');return false;}
+      else{
+        Object.assign(u,prior); // roll back — they stay pending, visible, retryable
+        toast('Couldn\u2019t save this approval to the database. Ask the owner to run the latest setup SQL (staff_members table), then approve again.','bad');
+        return false;
+      }
     }else{
       u.authRequired=true;
       delete u.pass;delete u.passHash;delete u.passSalt;
@@ -6063,6 +6076,7 @@ function settingsTeam(main){
       if(u.role!=='boss'&&u.authId&&USE_SUPABASE){
         const sync=el('button','btn ghost tiny','Re-sync login');
         sync.onclick=async()=>{
+          if(!SUPABASE_USER){toast('Sign in with your owner email first, then re-sync.','bad');return;}
           sync.disabled=true;sync.textContent='Syncing…';
           const {error}=await sbUpsertStaffMembership(u);
           sync.disabled=false;sync.textContent='Re-sync login';
