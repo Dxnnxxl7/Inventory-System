@@ -4,13 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stored</title>
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#1a1a12">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Stored">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<!-- Home-screen icon. Inline data-URI so the icon always resolves even if the .png file is missing; the file link is a higher-res fallback for browsers that prefer it. -->
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADmklEQVR4nO3dsXXbVhiAUSjOAmlccApv4M7ZIaXH0AAaw2V2sDtv4DncZAIfpUh0kiimRALPwuPHe0vhAXzFx/+A0iF0czgc7heI+GnvDcBIgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUn7eewPM4837t0ePffnw+QV3st7N4XC433sT7OupkB+bPWy3HFfunJjXrH9pgr5ia+OcOWpBX6mtUc4ataCv0KgYZ4xa0KQI+sqMnqqzTWlBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUjw5aVKf7r4dPfbu9tUL7uSyCHoyT4X8eI2w/88tx0ROiXnL+msg6EmsjVPU/yXoCWyNUtT/EPTORsUo6r8ImhRB72j0VDWlBU2MoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSPMbgGb//+svRY799/OMFd8IpBH3EUyE/XiPsebjl+I5TYt6ynh9H0I+sjVPUcxD0v2yNUtT7E/TfRsUo6n0JmhRBL+Onqim9H0GTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCkX9Z3Cu9evv/vz269fX3gnzOoigj4W8uPjwmbqoJ8L+dh6YV+vae+hz4151LlctmmDhjWmDHrEhDWlr9OUQcNa0wU9crKa0tdnuqBhC0GTImhSBE3KdEGP/Cvfqdca/XznU6/37vbV0Nc95XpfPnwe+pqjr7fVdEHDFlMGPWJKn3uNUVP63OuMmtLnXGfUVJ1tOi/LpEHvZWvUa8/fGvWa87fGOGPMyzJx0Fum9JZz10a59c2wNuotb4a1Uc4a87Isy83hcLjfexPPOfUvfiM/UJ7zSNyRHyo/3X07ee2o25U379+evHbmmJflQoJ+sMc3Vvb6t25PhT36tyMPngp79pAfXFTQ8Jxp76FhDUGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGT8ifFsaGszGWjYQAAAABJRU5ErkJggg==">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="apple-touch-icon.png">
 <style>
 :root{
   --ink:#14110d;
@@ -758,14 +761,40 @@ function loadSupabaseSDK(){
   return new Promise((resolve)=>{
     if(window.supabase){resolve();return;}
     if(_sdkLoading){
-      const check=setInterval(()=>{if(window.supabase){clearInterval(check);resolve();}},100);
+      let waited=0;
+      const check=setInterval(()=>{
+        if(window.supabase||!_sdkLoading){clearInterval(check);resolve();return;}
+        waited+=100;
+        if(waited>=15000){clearInterval(check);resolve();} // give up after 15s so we never poll forever
+      },100);
       return;
     }
     _sdkLoading=true;
     const s=document.createElement('script');
     s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    s.onload=()=>resolve();
-    s.onerror=()=>resolve();
+    s.onload=()=>{_sdkLoading=false;resolve();};
+    s.onerror=()=>{_sdkLoading=false;resolve();};
+    document.head.appendChild(s);
+  });
+}
+// On-demand loader for jsPDF (used only when exporting a compliance PDF).
+let _jspdfLoading=false;
+function loadJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf&&window.jspdf.jsPDF){resolve();return;}
+    if(_jspdfLoading){
+      let waited=0;
+      const chk=setInterval(()=>{
+        if(window.jspdf&&window.jspdf.jsPDF){clearInterval(chk);resolve();return;}
+        waited+=100;if(waited>=15000){clearInterval(chk);reject(new Error('jsPDF load timed out'));}
+      },100);
+      return;
+    }
+    _jspdfLoading=true;
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s.onload=()=>{_jspdfLoading=false;(window.jspdf&&window.jspdf.jsPDF)?resolve():reject(new Error('jsPDF unavailable after load'));};
+    s.onerror=()=>{_jspdfLoading=false;reject(new Error('Could not load jsPDF (offline?)'));};
     document.head.appendChild(s);
   });
 }
@@ -912,6 +941,13 @@ function load(){
       if(!d.stockHistory)d.stockHistory=[];
       if(!d.tempLogs)d.tempLogs=[];
       if(!d.temperatureLogs)d.temperatureLogs=[];
+      // Compliance: per-scope schedule of required daily temp checks, plus
+      // configurable pass/fail thresholds and a corrective-action log.
+      if(!d.compliance)d.compliance={schedule:{},thresholds:{},actions:[]};
+      if(!d.compliance.schedule)d.compliance.schedule={};
+      if(!d.compliance.thresholds)d.compliance.thresholds={};
+      if(!d.compliance.actions)d.compliance.actions=[];
+      if(!d.compliance.checkLogs)d.compliance.checkLogs=[];
       if(!d.branches)d.branches=[];
       if(!d.branches.find(b=>b.id==='branch_1')){
         const mainName=d.venue?.name||d.brand?.appName||'Main Branch';
@@ -1304,23 +1340,30 @@ function showRegister(push=true){
     if(USE_SUPABASE&&window.supabase){
       try{
         const anonClient=getAnonClient();
-        // Fetch establishment data to get branches
-        const resp=await anonClient.from('establishments').select('id,name,data');
-        const data=resp.data;
-        const error=resp.error;
+        // SECURITY: read only the safe public view (id, name, branch labels and
+        // system ids). Never read the private establishment data blob anonymously.
+        let data=null,error=null;
+        {
+          const vresp=await anonClient.from('establishments_public').select('id,name,branches');
+          if(!vresp.error&&vresp.data){
+            // Shape view rows to match what the loop below expects.
+            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[]}}));
+          }else{
+            error=vresp.error||{message:'Public branch directory is not available.'};
+          }
+        }
         if(error)console.warn('Branch fetch error:',error.message);
         if(data&&data.length){
           data.forEach(e=>{
             try{
               const d=e.data||{};
-              const ss=d.systems||[];
               let bs=[...(d.branches||[])];
               if(!bs.find(b=>b.id==='branch_1')){
                 bs.unshift({id:'branch_1',label:d.venue?.name||e.name||d.brand?.appName||'Main Branch',short:'MAIN'});
               }
               bs.forEach(b=>{
-                const sysIds=ss.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
-                allBranches.push({estId:e.id,branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
+                const sysIds=Array.isArray(b.systemIds)?b.systemIds:[];
+                allBranches.push({estId:e.id,branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds});
               });
             }catch(err){
               // fallback if data field has issues
@@ -1409,7 +1452,7 @@ async function doRegister(){
   if(USE_SUPABASE&&window.supabase){
     try{
       const anonClient=getAnonClient();
-      const{data}=await anonClient.from('establishments').select('id,name');
+      const{data}=await anonClient.from('establishments_public').select('id,name');
       if(data&&data.length)existingEsts=data;
     }catch(e){}
   }
@@ -1438,33 +1481,13 @@ async function doRegister(){
     try{selData=JSON.parse(selVal);}catch(e){selData={estId:selVal,branchId:'branch_1',systemIds:[]};}
     const selectedEstId=selData.estId||selVal;
     const selectedBranchId=selData.branchId||'branch_1';
-    let estDb=loadEst(selectedEstId);
-    if(!estDb&&USE_SUPABASE){
-      try{
-        const anonClient=getAnonClient();
-        const{data:remote}=await anonClient.from('establishments').select('data').eq('id',selectedEstId).maybeSingle();
-        if(remote&&remote.data){
-          estDb=migrateLegacy(remote.data);
-          saveEst(selectedEstId,estDb);
-        }
-      }catch(e){console.warn('Could not load remote branch data:',e);}
-    }
-    if(!estDb){$('#regMsg').textContent='Could not load branch data.';$('#regBtn').disabled=false;return;}
     const loginUsername=username||email; // staff use username, fallback to email
-    const firstScope=(selData.systemIds&&selData.systemIds[0])||(estDb.systems||[]).find(s=>s.branchId===selectedBranchId)?.id||(estDb.systems||[])[0]?.id||'kitchen';
-    // Validate username not taken
-    if(username&&(estDb.users||[]).find(u=>u.username===loginUsername)){$('#regMsg').textContent='That username is already taken.';$('#regBtn').disabled=false;return;}
+    const firstScope=(selData.systemIds&&selData.systemIds[0])||'';
+    if(!firstScope){$('#regMsg').textContent='This branch has no system available yet. Ask the owner to add one.';$('#regBtn').disabled=false;return;}
     const newUser={id:uid(),name,username:loginUsername,pass,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
-    estDb.users=estDb.users||[];
-    estDb.users.push(newUser);
-    // Notify boss/incharge in that establishment
-    const notifText='Account request: '+name+' wants to join '+selectedBranchId+'. Approve in Settings \u2192 Branches name \u2192 Team.';
-    estDb.notifications=estDb.notifications||[];
-    estDb.notifications.push({id:uid(),scope:'boss',text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
-    estDb.notifications.push({id:uid(),scope:firstScope,text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
-    // Save to localStorage
-    saveEst(selectedEstId,estDb);
-    // Push to Supabase and to the owner approval queue.
+    let queued=false;
+    // Push to Supabase approval queue. This intentionally does not mutate the
+    // private establishment data blob from an anonymous browser session.
     if(USE_SUPABASE){
       try{
         await loadSupabaseSDK();
@@ -1481,9 +1504,21 @@ async function doRegister(){
             branch_id:newUser.branchId,
             created_at:new Date(newUser.pendingAt).toISOString()
           });
-          await client.from('establishments').update({data:estDb,updated_at:new Date().toISOString()}).eq('id',selectedEstId);
+          queued=true;
         }
       }catch(e){console.warn('Supabase pending save failed:',e);}
+    }
+    if(!queued){
+      const estDb=loadEst(selectedEstId);
+      if(!estDb){$('#regMsg').textContent='Could not send the request. Try again when online.';$('#regBtn').disabled=false;return;}
+      if(username&&(estDb.users||[]).find(u=>u.username===loginUsername)){$('#regMsg').textContent='That username is already taken.';$('#regBtn').disabled=false;return;}
+      estDb.users=estDb.users||[];
+      estDb.users.push(newUser);
+      estDb.notifications=estDb.notifications||[];
+      const notifText='Account request: '+name+' wants to join '+selectedBranchId+'. Approve in Settings \u2192 Branches name \u2192 Team.';
+      estDb.notifications.push({id:uid(),scope:'boss',text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
+      estDb.notifications.push({id:uid(),scope:firstScope,text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
+      saveEst(selectedEstId,estDb);
     }
     $('#register').style.display='none';$('#regBtn').disabled=false;
     $('#auth').style.display='flex';
@@ -1529,6 +1564,7 @@ function blankDb(name){
     categories:{[sys1]:[]},
     storeTypes:{[sys1]:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}]},
     pending:[],announcements:[],messages:[],auditLog:[],
+    compliance:{schedule:{},thresholds:{},actions:[],checkLogs:[]},
     allergens:{},categoryFood:{[sys1]:{}},
     notifications:[],wastage:[],stockHistory:[],temperatureLogs:[]
   };
@@ -1730,6 +1766,11 @@ function migrateLegacy(d){
   if(!d.allergens)d.allergens={};if(!d.wastage)d.wastage=[];
   if(!d.stockHistory)d.stockHistory=[];if(!d.temperatureLogs)d.temperatureLogs=[];if(!d.categoryFood)d.categoryFood={kitchen:{},restaurant:{}};
   if(!d.notifications)d.notifications=[];
+  if(!d.compliance)d.compliance={schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  if(!d.compliance.schedule)d.compliance.schedule={};
+  if(!d.compliance.thresholds)d.compliance.thresholds={};
+  if(!d.compliance.actions)d.compliance.actions=[];
+  if(!d.compliance.checkLogs)d.compliance.checkLogs=[];
   if(d._schema&&d._schema<2)return seed();
   d._schema=SCHEMA_VERSION;
   return d;
@@ -1852,10 +1893,19 @@ function doLogin(){
           boss.email=input_;boss.pass=pass;
           if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
           save();SESSION=boss;$('#authMsg').textContent='';
-          renderEstPicker(boss);return;
-          finalizeLogin();
+          renderEstPicker(boss);
         }
+      }).catch(err=>{
+        // Sign-in threw (e.g. network drop mid-request) — fall back to local, else surface the error.
+        const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
+        if(local&&local.pass===pass&&!local.pending){SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+        $('#authMsg').textContent='Could not sign in — check your connection and try again.';
       });
+    }).catch(()=>{
+      // SDK failed to load — fall back to local auth if possible.
+      const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
+      if(local&&local.pass===pass&&!local.pending){SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+      $('#authMsg').textContent='Could not reach the sign-in service — check your connection.';
     });
     return;
   }
@@ -1958,6 +2008,7 @@ function navConfig(){
     {id:'order',ic:'🛒',label:'Need to order'},
     {id:'usage',ic:'📉',label:'Daily usage'},
     {id:'temps',ic:'🌡️',label:'Temp log'},
+    {id:'compliance',ic:'✅',label:'Compliance'},
     {id:'history',ic:'📚',label:'History'},
   ];
   if(role==='boss'){
@@ -1979,6 +2030,7 @@ function navConfig(){
     {id:'order',ic:'🛒',label:'Need to order'},
     {id:'usage',ic:'📉',label:'Daily usage'},
     {id:'temps',ic:'🌡️',label:'Temp log'},
+    {id:'compliance',ic:'✅',label:'Compliance'},
     {id:'history',ic:'📚',label:'History'}]};
 }
 function pendingCountFor(scope){return DB.pending.filter(p=>p.scope===scope).length;}
@@ -2083,7 +2135,7 @@ function buildNav(){
   };
   cfg.main.forEach(it=>sb.appendChild(mkItem(it)));
   if(cfg.admin&&cfg.admin.length){
-    sb.appendChild(el('div','nav-group-label',SESSION.role==='boss'?'Owner controls':'Account'));
+    sb.appendChild(el('div','nav-group-label',SESSION.role==='boss'?'Owner controls':'General'));
     cfg.admin.forEach(it=>sb.appendChild(mkItem(it)));
   }
   const foot=el('div','side-foot');
@@ -2300,7 +2352,9 @@ function visibleSystems(){
     const bid=SESSION.role==='boss'?(BRANCH_TAB||(all.find(s=>s.id===SCOPE)?.branchId)||'branch_1'):assignedBranch;
     return all.filter(s=>(s.branchId||'branch_1')===bid);
   }
-  return all.filter(s=>s.id===SESSION.scope);
+  // Staff: can view every system in their branch (but not edit items — see canEditStock).
+  const staffBranch=SESSION.branchId||(all.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+  return all.filter(s=>(s.branchId||'branch_1')===staffBranch);
 }
 function branchSystemsForUser(){
   const all=DB.systems||[];
@@ -2317,10 +2371,14 @@ function activeScope(){
     if(!branchSystems.find(s=>s.id===SCOPE)&&branchSystems.length)SCOPE=branchSystems[0].id;
     return SCOPE;
   }
-  // Staff: always locked to their assigned scope
-  const sc=SESSION.scope;
-  if(sc&&systems.find(s=>s.id===sc))return sc;
-  return systems[0]?.id||SCOPE;
+  // Staff: may view any system in their branch. Track SCOPE like in-charge,
+  // but default to their assigned system and keep SCOPE within their branch.
+  const staffBranch=SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
+  const staffBranchSystems=systems.filter(s=>(s.branchId||'branch_1')===staffBranch);
+  if(!SCOPE||!staffBranchSystems.find(s=>s.id===SCOPE)){
+    SCOPE=(SESSION.scope&&staffBranchSystems.find(s=>s.id===SESSION.scope))?SESSION.scope:(staffBranchSystems[0]?.id||SESSION.scope);
+  }
+  return SCOPE;
 }
 function render(){
   closeNav();
@@ -2333,8 +2391,8 @@ function render(){
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
   saveSessionState();
   const routes={
-    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,
-    usage:pageUsage,temps:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
+    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,compliance:pageCompliance,
+    usage:pageUsage,temps:pageTemps,compliance:pageCompliance,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
   main.innerHTML='';
@@ -2533,10 +2591,10 @@ function pageStocks(main){
   const scope=activeScope();
 
   // scope tabs — only systems in current branch, hidden if only 1
-  const branchId=BRANCH_TAB||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
+  const branchId=(SESSION.role==='boss'?BRANCH_TAB:null)||(DB.systems||[]).find(s=>s.id===scope)?.branchId||'branch_1';
   const branchSystems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branchId);
   let stRow=null;
-  if(SESSION.role!=='staff'&&branchSystems.length>1){
+  if(branchSystems.length>1){
     stRow=el('div','seg no-filter');
     branchSystems.forEach(s=>{
       const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));
@@ -2761,6 +2819,23 @@ function storedAtHtml(it){
 }
 
 function itemModal(scope,existing,startUnused){
+  // System picker (new items only): let in-charge/boss choose which system in
+  // their branch the item is added to, matching deliveries and usage. Switching
+  // re-opens the modal for the chosen system so all system-dependent fields
+  // (categories, suppliers, storage types) refresh correctly.
+  let scopePicker=null;
+  if(!existing){
+    const pickSystems=branchSystemsForUser();
+    if(pickSystems.length>1){
+      const seg=el('div','seg scope-seg');
+      pickSystems.forEach(s=>{
+        const b=el('button',scope===s.id?'on '+s.id:'',scopeLabel(s.id));b.type='button';
+        b.onclick=()=>{if(s.id!==scope){closeModal();itemModal(s.id,null,startUnused);}};
+        seg.appendChild(b);
+      });
+      scopePicker=field('Add to system',seg,'Pick which system in your branch this item belongs to.');
+    }
+  }
   // merge categories from both scopes — since items can move between systems
   const allCats=[...new Set(visibleSystems().flatMap(s=>DB.categories[s.id]||[]))].sort();
   const cats=allCats.length?allCats:(DB.categories[scope]||[]);
@@ -2834,6 +2909,7 @@ function itemModal(scope,existing,startUnused){
   if(!existing){tempI.value=defaultTemp(store);}
   updateTempVis();
 
+  if(scopePicker)body.appendChild(scopePicker);
   body.appendChild(field('Item name',nameI));
   body.appendChild(field('Category',catI));
   body.appendChild(newCatF);
@@ -3037,8 +3113,11 @@ function warnModal(title,msg){
 /* ---------- DELIVERIES (shared FOH+BOH, records split) ---------- */
 function pageDeliveries(main){
   const scope=activeScope();
+  // Staff always start a delivery on their OWN assigned system, even if they're
+  // currently viewing another system's stock. They can still switch in the modal.
+  const deliveryDefault=(SESSION.role==='staff'&&SESSION.scope)?SESSION.scope:scope;
   const log=el('button','btn brass sm','+ Log delivery');
-  log.onclick=()=>deliveryModal(scope);
+  log.onclick=()=>deliveryModal(deliveryDefault);
   main.appendChild(headEl(scopeLabel(scope),'Deliveries','Log deliveries and manage suppliers.',[log]));
 
   // sticky bar
@@ -3057,7 +3136,7 @@ function pageDeliveries(main){
 
   const allToday=DB.deliveries.filter(d=>d.scope===scope).sort((a,b)=>b.ts-a.ts).slice(0,30);
   if(!allToday.length){
-    main.appendChild(emptyState('🚚','No deliveries logged yet for '+scopeLabel(scope)+'.','Log a delivery',()=>deliveryModal(scope)));
+    main.appendChild(emptyState('🚚','No deliveries logged yet for '+scopeLabel(scope)+'.','Log a delivery',()=>deliveryModal(deliveryDefault)));
     return;
   }
 
@@ -3382,7 +3461,9 @@ function deliveryModal(scope){
   // Everyone logging a delivery chooses which system in their branch receives it.
   const scopeSeg=el('div','seg');scopeSeg.style.marginBottom='14px';
   const visSystems=branchSystemsForUser();
-  if(!visSystems.find(s=>s.id===delivScope))delivScope=visSystems[0]?.id||scope;
+  const mustChooseSystem=visSystems.length>1;
+  if(mustChooseSystem)delivScope='';
+  else if(!visSystems.find(s=>s.id===delivScope))delivScope=visSystems[0]?.id||scope;
   if(visSystems.length){
     visSystems.forEach(s=>{
       const b=el('button',delivScope===s.id?'on '+s.id:'',scopeLabel(s.id));
@@ -3409,7 +3490,15 @@ function deliveryModal(scope){
   body.appendChild(field('Invoice number',invI,'Required — won’t save without it.'));
   body.appendChild(el('div','nav-group-label','Items received'));
   linesWrap=el('div');body.appendChild(linesWrap);
+  function showChooseSystemHint(){
+    linesWrap.innerHTML='';
+    const hint=el('div','suptag');
+    hint.style.cssText='padding:12px;border:1px dashed var(--line);border-radius:10px;margin-bottom:10px;';
+    hint.textContent='Choose a system first.';
+    linesWrap.appendChild(hint);
+  }
   function addLineRow(preItem){
+    if(!delivScope){showChooseSystemHint();return;}
     const idx=lines.length;
     const line={itemId:preItem?preItem.id:'',qty:'',store:preItem?preItem.store:'dry',temp:preItem?(preItem.temp!==undefined&&preItem.temp!==''?String(preItem.temp):String(defaultTemp(preItem.store)||'')):'',unit:preItem?preItem.unit:'unit',name:preItem?preItem.name:'',isNew:false};
     lines.push(line);
@@ -3560,7 +3649,7 @@ function deliveryModal(scope){
     };
     linesWrap.appendChild(row);
   }
-  addLineRow();
+  if(delivScope)addLineRow();else showChooseSystemHint();
   const addBtn=el('button','btn ghost sm','+ Add another item');addBtn.onclick=()=>addLineRow();
   body.appendChild(addBtn);
   const err=el('div','err');body.appendChild(err);
@@ -3568,6 +3657,7 @@ function deliveryModal(scope){
   const save_=el('button','btn brass','Save delivery');save_.style.flex='2';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   save_.onclick=()=>{
+    if(!delivScope){err.textContent='Choose which system this delivery goes to.';return;}
     if(!invI.value.trim()){err.textContent='Invoice number is required — the delivery won’t save without it.';return;}
     const out=[];const pendings=[];
     for(const ln of lines){
@@ -3664,7 +3754,7 @@ Move to designated cold storage immediately, then correct the temperature before
   };
   const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
   foot.appendChild(cancel);foot.appendChild(save_);
-  openModal('Log delivery \u2014 '+scopeLabel(delivScope),body,foot);
+  openModal(delivScope?'Log delivery \u2014 '+scopeLabel(delivScope):'Log delivery',body,foot);
 }
 
 /* ---------- NEED TO ORDER ---------- */
@@ -4395,6 +4485,381 @@ function pageVenue(main){
 }
 
 /* ---------- TEMPERATURE LOG ---------- */
+/* ---------- COMPLIANCE (HACCP-style temp check scheduling) ----------
+   Pure helpers (unit-tested in tests/run.js). These decide the pass/fail
+   thresholds, evaluate a reading, and compute whether today's required
+   checks have been completed for a given system. */
+
+// Default HACCP-aligned thresholds per storage type (°C). Owners can override
+// these per scope via DB.compliance.thresholds[scope][storeId].
+function defaultThreshold(storeId){
+  if(storeId==='freezer')return{min:-99,max:-18,label:'≤ −18°C'};
+  if(storeId==='cold')return{min:0,max:5,label:'0–5°C'};   // chilled/cool room
+  return null; // dry / custom types have no temperature rule by default
+}
+function thresholdFor(scope,storeId){
+  const over=(((DB.compliance||{}).thresholds||{})[scope]||{})[storeId];
+  return over||defaultThreshold(storeId);
+}
+// Evaluate a numeric reading against the threshold. Returns 'pass' | 'fail' | 'na'.
+function evalReading(scope,storeId,temp){
+  const th=thresholdFor(scope,storeId);
+  if(!th||temp===''||temp==null||isNaN(temp))return'na';
+  return(temp>=th.min&&temp<=th.max)?'pass':'fail';
+}
+// The list of required daily check times for a scope, e.g. ['08:00','22:00'].
+function requiredChecks(scope){
+  const s=(((DB.compliance||{}).schedule||{})[scope])||[];
+  return Array.isArray(s)?s.slice().sort():[];
+}
+// For a given scope + date (ISO yyyy-mm-dd), figure out which scheduled checks
+// were completed. A scheduled slot counts as done if any temp log exists that
+// day within ±windowMin minutes of the slot time. Returns status objects.
+function scheduleStatus(scope,dateISO,windowMin){
+  const win=windowMin||120;
+  const req=requiredChecks(scope);
+  const dayStart=new Date(dateISO+'T00:00:00').getTime();
+  const dayEnd=dayStart+86400000;
+  const logs=(DB.tempLogs||[]).filter(l=>l.scope===scope&&l.ts>=dayStart&&l.ts<dayEnd);
+  const isToday=dateISO===todayISO();
+  const nowMin=isToday?(new Date().getHours()*60+new Date().getMinutes()):24*60;
+  return req.map(slot=>{
+    const [h,m]=slot.split(':').map(Number);
+    const slotMin=h*60+m;
+    const done=logs.some(l=>{
+      const d=new Date(l.ts);const lm=d.getHours()*60+d.getMinutes();
+      return Math.abs(lm-slotMin)<=win;
+    });
+    let state;
+    if(done)state='done';
+    else if(isToday&&nowMin<slotMin-win)state='upcoming';
+    else state='missed';
+    return{slot,state};
+  });
+}
+// Roll-up: 'complete' (all done), 'pending' (some upcoming, none missed),
+// 'attention' (something missed), or 'none' (no schedule configured).
+function complianceStatus(scope,dateISO){
+  const st=scheduleStatus(scope,dateISO);
+  if(!st.length)return'none';
+  if(st.some(s=>s.state==='missed'))return'attention';
+  if(st.some(s=>s.state==='upcoming'))return'pending';
+  return'complete';
+}
+
+// Assemble the data for an inspector report over a date range (pure/testable).
+// Returns temp-log rows (with pass/fail), corrective actions, and a per-day
+// schedule-adherence summary.
+function buildComplianceReport(scope,fromISO,toISO){
+  const from=new Date(fromISO+'T00:00:00').getTime();
+  const to=new Date(toISO+'T23:59:59').getTime();
+  const logs=(DB.tempLogs||[]).filter(l=>l.scope===scope&&l.ts>=from&&l.ts<=to).sort((a,b)=>a.ts-b.ts);
+  const rows=logs.map(l=>{
+    const readings=Object.entries(l.readings||{}).map(([id,r])=>({
+      label:r.label,temp:r.temp,result:evalReading(scope,id,r.temp)
+    }));
+    return{ts:l.ts,by:l.byName||'',readings,corrective:l.corrective||'',note:l.note||''};
+  });
+  const actions=(((DB.compliance||{}).actions)||[])
+    .filter(a=>a.scope===scope&&a.ts>=from&&a.ts<=to)
+    .sort((a,b)=>a.ts-b.ts);
+  // Per-day adherence: for each day in range with a schedule, count done/missed.
+  const days=[];
+  let d=new Date(fromISO+'T00:00:00');
+  const end=new Date(toISO+'T00:00:00');
+  while(d<=end){
+    const iso=d.toISOString().slice(0,10);
+    const st=scheduleStatus(scope,iso);
+    if(st.length){
+      days.push({date:iso,done:st.filter(s=>s.state==='done').length,total:st.length,
+        missed:st.filter(s=>s.state==='missed').length});
+    }
+    d=new Date(d.getTime()+86400000);
+  }
+  const totalReadings=rows.reduce((n,r)=>n+r.readings.length,0);
+  const failReadings=rows.reduce((n,r)=>n+r.readings.filter(x=>x.result==='fail').length,0);
+  return{scope,fromISO,toISO,rows,actions,days,
+    summary:{logs:rows.length,readings:totalReadings,failures:failReadings,corrective:actions.length}};
+}
+
+function complianceScheduleModal(scope){
+  const body=el('div');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px">Set the times staff must record temperatures each day for '+esc(scopeLabel(scope))+'. Common practice: an opening and a closing check.</div>';
+  DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[]};
+  const times=(DB.compliance.schedule[scope]||[]).slice();
+  const listWrap=el('div');
+  function paint(){
+    listWrap.innerHTML='';
+    if(!times.length)listWrap.innerHTML='<div class="suptag" style="margin-bottom:8px">No checks scheduled yet.</div>';
+    times.slice().sort().forEach((t,i)=>{
+      const row=el('div');row.style.cssText='display:flex;gap:8px;align-items:center;margin-bottom:6px';
+      const lbl=el('div');lbl.style.cssText='flex:1;font-weight:600';lbl.textContent='🕒 '+t;
+      const rm=el('button','btn ghost tiny','Remove');rm.onclick=()=>{const idx=times.indexOf(t);if(idx>-1)times.splice(idx,1);paint();};
+      row.appendChild(lbl);row.appendChild(rm);listWrap.appendChild(row);
+    });
+  }
+  paint();body.appendChild(listWrap);
+  const addRow=el('div');addRow.style.cssText='display:flex;gap:8px;margin-top:10px';
+  const timeI=input('','HH:MM');timeI.type='time';
+  const addBtn=el('button','btn ghost sm','Add time');
+  addBtn.onclick=()=>{const v=timeI.value;if(!v)return;if(!times.includes(v))times.push(v);timeI.value='';paint();};
+  addRow.appendChild(timeI);addRow.appendChild(addBtn);body.appendChild(addRow);
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
+  const ok=el('button','btn brass','Save schedule');ok.style.flex='2';
+  ok.onclick=()=>{
+    DB.compliance.schedule[scope]=times.slice().sort();
+    logAudit('Compliance schedule updated',scopeLabel(scope)+': '+(times.length?times.sort().join(', '):'none'),scope);
+    save();closeModal();render();toast('Schedule saved','good');
+  };
+  foot.appendChild(cancel);foot.appendChild(ok);
+  openModal('Temperature check schedule',body,foot);
+}
+
+// Inspector-ready PDF export: pick a date range, then render a formatted report.
+function complianceReportModal(scope){
+  const body=el('div');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px">Generate a temperature & food-safety record for '+esc(scopeLabel(scope))+' to print or hand to an inspector.</div>';
+  const today=todayISO();
+  const weekAgo=new Date(Date.now()-6*86400000).toISOString().slice(0,10);
+  const fromI=input(weekAgo,'','date');const toI=input(today,'','date');
+  body.appendChild(field('From',fromI));
+  body.appendChild(field('To',toI));
+  const quick=el('div');quick.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px';
+  [['Last 7 days',6],['Last 30 days',29],['This month',-1]].forEach(([lbl,days])=>{
+    const b=el('button','btn ghost sm',lbl);b.onclick=()=>{
+      if(days===-1){const n=new Date();fromI.value=new Date(n.getFullYear(),n.getMonth(),1).toISOString().slice(0,10);toI.value=today;}
+      else{fromI.value=new Date(Date.now()-days*86400000).toISOString().slice(0,10);toI.value=today;}
+    };quick.appendChild(b);
+  });
+  body.appendChild(quick);
+  const err=el('div','err');body.appendChild(err);
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
+  const go=el('button','btn brass','Generate PDF');go.style.flex='2';
+  go.onclick=async()=>{
+    if(fromI.value>toI.value){err.textContent='“From” date must be on or before “To” date.';return;}
+    go.disabled=true;go.textContent='Generating…';err.textContent='';
+    try{
+      await loadJsPDF();
+      const report=buildComplianceReport(scope,fromI.value,toI.value);
+      renderCompliancePDF(report);
+      closeModal();toast('Report generated','good');
+    }catch(e){
+      err.textContent='Could not generate PDF: '+(e.message||e)+' (need to be online the first time).';
+      go.disabled=false;go.textContent='Generate PDF';
+    }
+  };
+  foot.appendChild(cancel);foot.appendChild(go);
+  openModal('Compliance report (PDF)',body,foot);
+}
+
+function renderCompliancePDF(report){
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'pt',format:'a4'});
+  const W=doc.internal.pageSize.getWidth();
+  const M=40;let y=M;
+  const biz=(DB.venue&&DB.venue.name)||(DB.brand&&DB.brand.appName)||'Establishment';
+  const line=(txt,size,style,color)=>{
+    doc.setFont('helvetica',style||'normal');doc.setFontSize(size||10);
+    if(color)doc.setTextColor(color[0],color[1],color[2]);else doc.setTextColor(30,30,30);
+    doc.text(String(txt),M,y);
+  };
+  const fmtTS=(ts)=>{const d=new Date(ts);return d.toLocaleDateString('en-GB')+' '+d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});};
+  function pageBreak(need){if(y+(need||0)>doc.internal.pageSize.getHeight()-M){doc.addPage();y=M;}}
+
+  // Header
+  line(biz,18,'bold');y+=22;
+  line('Food Safety — Temperature Records',13,'bold');y+=16;
+  line(scopeLabel(report.scope)+'   ·   '+report.fromISO+'  to  '+report.toISO,10);y+=14;
+  line('Generated '+new Date().toLocaleString('en-GB')+' by '+((SESSION&&SESSION.name)||'—'),9,'normal',[110,110,110]);y+=10;
+  doc.setDrawColor(200);doc.line(M,y,W-M,y);y+=18;
+
+  // Summary
+  const s=report.summary;
+  line('Summary',12,'bold');y+=15;
+  line('Temperature logs: '+s.logs+'      Readings: '+s.readings+'      Out-of-range: '+s.failures+'      Corrective actions recorded: '+s.corrective,10);y+=18;
+
+  // Schedule adherence
+  if(report.days.length){
+    pageBreak(40);line('Daily check adherence',12,'bold');y+=15;
+    report.days.forEach(d=>{
+      pageBreak(14);
+      const ok=d.missed===0;
+      line(d.date+'   '+d.done+'/'+d.total+' checks'+(ok?'  ✓':'   MISSED '+d.missed),10,'normal',ok?[40,120,80]:[190,50,50]);
+      y+=13;
+    });
+    y+=8;
+  }
+
+  // Temperature log table
+  pageBreak(40);line('Temperature log',12,'bold');y+=16;
+  doc.setFontSize(9);
+  report.rows.forEach(r=>{
+    pageBreak(26);
+    doc.setFont('helvetica','bold');doc.setTextColor(30,30,30);
+    doc.text(fmtTS(r.ts)+'   ('+r.by+')',M,y);y+=12;
+    doc.setFont('helvetica','normal');
+    r.readings.forEach(rd=>{
+      pageBreak(12);
+      const fail=rd.result==='fail';
+      if(fail)doc.setTextColor(190,50,50);else doc.setTextColor(60,60,60);
+      doc.text('   • '+rd.label+': '+rd.temp+'°C   '+(rd.result==='na'?'':(fail?'FAIL':'PASS')),M,y);y+=11;
+    });
+    if(r.corrective){pageBreak(12);doc.setTextColor(150,90,20);doc.text('   Corrective action: '+r.corrective,M,y);y+=11;}
+    if(r.note){pageBreak(12);doc.setTextColor(120,120,120);doc.text('   Note: '+r.note,M,y);y+=11;}
+    y+=3;
+  });
+  if(!report.rows.length){line('No temperature logs in this period.',10,'normal',[120,120,120]);y+=14;}
+
+  // Corrective actions appendix
+  if(report.actions.length){
+    doc.addPage();y=M;
+    line('Corrective actions',13,'bold');y+=18;
+    doc.setFontSize(9);
+    report.actions.forEach(a=>{
+      pageBreak(30);
+      doc.setFont('helvetica','bold');doc.setTextColor(30,30,30);doc.text(fmtTS(a.ts)+'   ('+(a.byName||'')+')',M,y);y+=12;
+      doc.setFont('helvetica','normal');doc.setTextColor(190,50,50);doc.text('   Issue: '+a.readings,M,y);y+=11;
+      doc.setTextColor(40,120,80);doc.text('   Action: '+a.action,M,y);y+=16;
+    });
+  }
+
+  // Footer note on every page
+  const pages=doc.internal.getNumberOfPages();
+  for(let p=1;p<=pages;p++){
+    doc.setPage(p);doc.setFontSize(8);doc.setTextColor(150,150,150);
+    doc.text('Generated by StockLine — this record supports, but does not replace, your official food-safety management system.',M,doc.internal.pageSize.getHeight()-20);
+    doc.text('Page '+p+' of '+pages,W-M-50,doc.internal.pageSize.getHeight()-20);
+  }
+  const stamp=report.fromISO+'_to_'+report.toISO;
+  doc.save((biz.replace(/[^a-z0-9]+/gi,'-'))+'-compliance-'+stamp+'.pdf');
+}
+
+function haccpChecks(){
+  return [
+    {id:'temps',area:'Food safety',check:'Fridges, freezers and hot/cold holding are within safe limits.',law:'Food safety temperature control / HACCP CCP'},
+    {id:'receiving',area:'Food safety',check:'Deliveries were checked for temperature, damage, expiry and contamination.',law:'Approved supplier and receiving control'},
+    {id:'storage',area:'Food safety',check:'Food is labelled, dated, covered, separated and stored off the floor.',law:'Cross-contamination and traceability control'},
+    {id:'allergens',area:'Food safety',check:'Allergen information is accurate and allergen items are separated where needed.',law:'Allergen management'},
+    {id:'cleaning',area:'Food safety',check:'Cleaning and sanitising tasks are complete for food contact surfaces.',law:'Cleaning and sanitation prerequisite program'},
+    {id:'pest',area:'Food safety',check:'No pest activity, droppings, damaged packaging or entry points observed.',law:'Pest control prerequisite program'},
+    {id:'hygiene',area:'Food safety',check:'Handwashing, illness reporting, hair restraint and protective clothing are followed.',law:'Personal hygiene requirements'},
+    {id:'chemicals',area:'Work health and safety',check:'Chemicals are labelled, stored away from food and used with correct PPE.',law:'WHS hazardous substances control'},
+    {id:'slips',area:'Work health and safety',check:'Floors, walkways and exits are clear, dry and free from trip hazards.',law:'Workplace health and safety duty of care'},
+    {id:'equipment',area:'Work health and safety',check:'Equipment guards, cords, gas/electrical items and sharp tools are safe to use.',law:'Plant/equipment safety'}
+  ];
+}
+function todaysComplianceLog(scope){
+  const start=new Date().setHours(0,0,0,0);
+  return ((DB.compliance||{}).checkLogs||[]).find(l=>l.scope===scope&&l.ts>=start);
+}
+function complianceChecklistModal(scope,existing){
+  DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  DB.compliance.checkLogs=DB.compliance.checkLogs||[];
+  const checks=haccpChecks();
+  const answers={...(existing?.answers||{})};
+  const body=el('div');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px">HACCP-based daily check for '+esc(scopeLabel(scope))+'. Mark each control. Failed checks require corrective action.</div>';
+  checks.forEach(ch=>{
+    const row=el('div','card pad');row.style.marginBottom='8px';
+    row.innerHTML='<div class="suptag">'+esc(ch.area)+' · '+esc(ch.law)+'</div><b style="font-size:14px">'+esc(ch.check)+'</b>';
+    const seg=el('div','seg');seg.style.marginTop='8px';
+    [['pass','Pass'],['fail','Fail'],['na','N/A']].forEach(([v,l])=>{
+      const b=el('button',answers[ch.id]===v?'on':'',l);
+      b.onclick=()=>{answers[ch.id]=v;[...seg.children].forEach(x=>x.className='');b.className='on';refreshCorrective();};
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);body.appendChild(row);
+  });
+  const corrective=input(existing?.corrective||'','Required for failed checks: what did you do?');
+  const correctiveField=field('Corrective action',corrective,'Examples: discarded food, cleaned area, isolated equipment, called maintenance, retrained staff.');
+  body.appendChild(correctiveField);
+  const note=input(existing?.note||'','Optional notes');
+  body.appendChild(field('Notes',note));
+  const err=el('div','err');body.appendChild(err);
+  function refreshCorrective(){
+    correctiveField.style.display=Object.values(answers).includes('fail')?'block':'none';
+  }
+  refreshCorrective();
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
+  const saveBtn=el('button','btn brass',existing?'Save checklist':'Complete checklist');saveBtn.style.flex='2';
+  saveBtn.onclick=()=>{
+    const missing=checks.filter(ch=>!answers[ch.id]);
+    if(missing.length){err.textContent='Complete every check before saving.';return;}
+    const failed=checks.filter(ch=>answers[ch.id]==='fail');
+    if(failed.length&&!corrective.value.trim()){err.textContent='Corrective action is required for failed checks.';return;}
+    const rec={id:existing?.id||uid(),scope,ts:existing?.ts||now(),answers,corrective:corrective.value.trim(),note:note.value.trim(),byId:SESSION.id,byName:SESSION.name};
+    if(existing)Object.assign(existing,rec);
+    else DB.compliance.checkLogs.unshift(rec);
+    if(failed.length){
+      DB.compliance.actions=DB.compliance.actions||[];
+      DB.compliance.actions.unshift({id:uid(),scope,ts:now(),readings:'HACCP/WHS checklist: '+failed.map(f=>f.check).join('; '),action:rec.corrective,byId:SESSION.id,byName:SESSION.name});
+      logAudit('Compliance corrective action',failed.map(f=>f.id).join(', ')+' -> '+rec.corrective,scope);
+    }else{
+      logAudit('Compliance checklist completed','All HACCP/WHS checks passed or N/A',scope);
+    }
+    save();closeModal();render();toast('Compliance checklist saved','good');
+  };
+  foot.appendChild(cancel);foot.appendChild(saveBtn);
+  openModal('Daily compliance checklist',body,foot);
+}
+function pageCompliance(main){
+  const scope=activeScope();
+  DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  DB.compliance.checkLogs=DB.compliance.checkLogs||[];
+  main.appendChild(headEl('HACCP based','Compliance','Workplace health and safety plus food safety controls for '+scopeLabel(scope)+'.'));
+  const bar=el('div');scopeTabs(bar,()=>render());main.appendChild(bar);
+
+  const tempStatus=complianceStatus(scope,todayISO());
+  const todayLog=todaysComplianceLog(scope);
+  const failed=todayLog?Object.values(todayLog.answers||{}).filter(v=>v==='fail').length:0;
+  const top=el('div','card pad');top.style.marginBottom='14px';
+  const checklistState=todayLog?(failed?'Attention required':'Complete'):'Due today';
+  const checklistColor=todayLog?(failed?'var(--bad)':'var(--sage)'):'#b5862f';
+  const tempText={complete:'Temp checks complete',pending:'Temp checks pending',attention:'Temp checks missed',none:'No temp schedule'}[tempStatus]||'Temp checks';
+  top.innerHTML=`<div class="flex-between" style="gap:12px;flex-wrap:wrap">
+    <div><b style="font-size:18px">Daily compliance status</b><div class="suptag">Food safety legislation, HACCP controls and workplace health/safety checks.</div></div>
+    <span class="chip" style="font-size:11px;color:${checklistColor};border-color:${checklistColor}">${esc(checklistState)}</span>
+  </div>
+  <div class="stat-row" style="margin-top:12px">
+    <div class="card stat"><div class="k">Checklist</div><div class="v" style="font-size:18px;color:${checklistColor}">${todayLog?'Done':'Due'}</div></div>
+    <div class="card stat"><div class="k">Failed controls</div><div class="v" style="font-size:18px;color:${failed?'var(--bad)':'var(--sage)'}">${failed}</div></div>
+    <div class="card stat"><div class="k">Temperature</div><div class="v" style="font-size:18px">${esc(tempText)}</div></div>
+  </div>`;
+  const actions=el('div');actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+  const logBtn=el('button','btn brass sm',todayLog?'Edit today checklist':'+ Complete checklist');
+  logBtn.onclick=()=>complianceChecklistModal(scope,todayLog);
+  actions.appendChild(logBtn);
+  const tempBtn=el('button','btn ghost sm','Open temp log');tempBtn.onclick=()=>{CURRENT='temps';render();};
+  actions.appendChild(tempBtn);
+  const reportBtn=el('button','btn ghost sm','Export compliance PDF');reportBtn.onclick=()=>complianceReportModal(scope);
+  actions.appendChild(reportBtn);
+  top.appendChild(actions);main.appendChild(top);
+
+  const guide=el('div','card pad');guide.style.marginBottom='14px';
+  guide.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">HACCP control areas</div>';
+  haccpChecks().forEach(ch=>{
+    const row=el('div','list-card');
+    row.innerHTML='<div><b>'+esc(ch.check)+'</b><div class="suptag">'+esc(ch.area)+' · '+esc(ch.law)+'</div></div>';
+    guide.appendChild(row);
+  });
+  main.appendChild(guide);
+
+  const logs=(DB.compliance.checkLogs||[]).filter(l=>l.scope===scope).slice(0,30);
+  const hist=el('div','card pad');
+  hist.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">Checklist history</div>';
+  if(!logs.length)hist.appendChild(el('div','suptag','No compliance checklist logs yet.'));
+  logs.forEach(l=>{
+    const failCount=Object.values(l.answers||{}).filter(v=>v==='fail').length;
+    const row=el('div','list-card');
+    row.innerHTML='<div class="flex-between"><div><b>'+fmtDate(l.ts)+' '+fmtTime(l.ts)+'</b><div class="suptag">By '+esc(l.byName||'')+(l.note?' · '+esc(l.note):'')+'</div></div><span class="chip '+(failCount?'bad':'ok')+'" style="font-size:11px">'+(failCount?failCount+' failed':'Passed')+'</span></div>'+(l.corrective?'<div class="suptag" style="margin-top:6px"><b>Action:</b> '+esc(l.corrective)+'</div>':'');
+    hist.appendChild(row);
+  });
+  main.appendChild(hist);
+}
+
 function pageTemps(main){
   const scope=activeScope();
   if(!DB.tempLogs)DB.tempLogs=[];
@@ -4403,6 +4868,42 @@ function pageTemps(main){
   main.appendChild(headEl('','Temp log','Record fridge, freezer and cool room temperatures.'));
   const bar=el('div');scopeTabs(bar,()=>render());main.appendChild(bar);
   const stores=(DB.storeTypes[scope]||[]).filter(s=>s.id!=='dry');
+
+  // ---- Compliance schedule banner ----
+  const req=requiredChecks(scope);
+  const compCard=el('div','card pad');compCard.style.marginBottom='14px';
+  const status=complianceStatus(scope,todayISO());
+  const statusMeta={
+    complete:{c:'var(--sage)',t:'✅ All required checks done today'},
+    pending:{c:'#b5862f',t:'⏳ Checks still due today'},
+    attention:{c:'var(--bad)',t:'⚠️ Missed required check(s) today'},
+    none:{c:'var(--muted)',t:'No compliance schedule set for this system'}
+  }[status];
+  const head2=el('div','flex-between');
+  head2.innerHTML='<div><b style="color:'+statusMeta.c+'">'+statusMeta.t+'</b><div class="suptag" style="margin-top:2px">HACCP daily temperature checks</div></div>';
+  compCard.appendChild(head2);
+  if(req.length){
+    const chips=el('div');chips.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px';
+    scheduleStatus(scope,todayISO()).forEach(s=>{
+      const m={done:{b:'var(--sage)',x:'✓'},upcoming:{b:'var(--muted)',x:'•'},missed:{b:'var(--bad)',x:'✕'}}[s.state];
+      const chip=el('div');chip.style.cssText='padding:6px 12px;border-radius:20px;border:1.5px solid '+m.b+';color:'+m.b+';font-weight:600;font-size:13px';
+      chip.textContent=m.x+' '+s.slot;
+      chips.appendChild(chip);
+    });
+    compCard.appendChild(chips);
+  }
+  // Schedule editor + report export — owner and in-charge only
+  if(isBoss||isIncharge){
+    const btnRow=el('div');btnRow.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:10px';
+    const editBtn=el('button','btn ghost sm','Edit schedule');
+    editBtn.onclick=()=>complianceScheduleModal(scope);
+    btnRow.appendChild(editBtn);
+    const pdfBtn=el('button','btn ghost sm','Export report (PDF)');
+    pdfBtn.onclick=()=>complianceReportModal(scope);
+    btnRow.appendChild(pdfBtn);
+    compCard.appendChild(btnRow);
+  }
+  main.appendChild(compCard);
 
   const logBtn=el('button','btn brass','+ Log temperatures');logBtn.style.marginBottom='16px';
   logBtn.onclick=()=>{
@@ -4418,6 +4919,20 @@ function pageTemps(main){
       row.appendChild(hint);body.appendChild(row);
     });
     const noteI=input('','Optional note');body.appendChild(field('Note',noteI));
+    // Corrective action — appears/required when any reading fails its threshold (HACCP).
+    const caI=input('','e.g. moved stock to spare fridge, called engineer, discarded');
+    const caField=field('Corrective action taken',caI,'Required when a temperature is out of range — records what you did about it.');
+    caField.style.display='none';
+    body.appendChild(caField);
+    function refreshCA(){
+      let anyFail=false;
+      Object.entries(inputs).forEach(([id,{inp}])=>{
+        const v=inp.value.trim();
+        if(v!==''&&evalReading(scope,id,parseFloat(v))==='fail')anyFail=true;
+      });
+      caField.style.display=anyFail?'block':'none';
+    }
+    Object.values(inputs).forEach(({inp})=>{inp.addEventListener('input',refreshCA);});
     const errDiv=el('div','err');body.appendChild(errDiv);
     const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
     const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -4428,21 +4943,30 @@ function pageTemps(main){
         const v=inp.value.trim();
         if(v!==''){
           const num=parseFloat(v);readings[id]={label:store.label,temp:num};hasReading=true;
-          if(id==='freezer'&&num>-15)outOfRange.push(`${store.label}: ${num}°C (should be ≤−15°C)`);
-          if(id==='cold'&&(num<0||num>5))outOfRange.push(`${store.label}: ${num}°C (should be 1–4°C)`);
+          if(evalReading(scope,id,num)==='fail'){
+            const th=thresholdFor(scope,id);
+            outOfRange.push(`${store.label}: ${num}°C (should be ${th?th.label:'in range'})`);
+          }
         }
       });
       if(!hasReading){errDiv.textContent='Enter at least one temperature.';return;}
+      const corrective=caI.value.trim();
+      if(outOfRange.length&&!corrective){errDiv.textContent='A corrective action is required when a temperature is out of range. Record what you did before saving.';return;}
       const parts=timeI.value.split(':');
       const ts=new Date().setHours(parseInt(parts[0])||0,parseInt(parts[1])||0,0,0);
-      const log={id:uid(),scope,ts,readings,note:noteI.value.trim(),byId:SESSION.id,byName:SESSION.name,outOfRange:outOfRange.length>0};
+      const log={id:uid(),scope,ts,readings,note:noteI.value.trim(),corrective:corrective||'',byId:SESSION.id,byName:SESSION.name,outOfRange:outOfRange.length>0};
       DB.tempLogs.unshift(log);
       if(outOfRange.length){
         DB.notifications=DB.notifications||[];
         DB.notifications.unshift({id:uid(),scope,text:'⚠️ Temp out of range: '+outOfRange.join(', '),type:'low',ts:now(),read:false});
+        // Record a corrective-action entry for the compliance audit trail.
+        DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[]};
+        DB.compliance.actions=DB.compliance.actions||[];
+        DB.compliance.actions.unshift({id:uid(),scope,ts,readings:outOfRange.join('; '),action:corrective,byId:SESSION.id,byName:SESSION.name});
+        logAudit('Temp out of range — corrective action',outOfRange.join('; ')+' → '+corrective,scope);
       }
       save();closeModal();render();
-      toast(outOfRange.length?'Logged ⚠️ Check temperatures!':'Temperatures logged ✅',outOfRange.length?'bad':'good');
+      toast(outOfRange.length?'Logged ⚠️ Corrective action recorded':'Temperatures logged ✅',outOfRange.length?'bad':'good');
     };
     foot.appendChild(cancel);foot.appendChild(ok);
     openModal('Log temperatures',body,foot);
@@ -4759,11 +5283,11 @@ function pageSettings(main){
   // Re-enable when navigating away (handled in render())
   const isBoss=SESSION.role==='boss';
   const isIncharge=SESSION.role==='incharge';
-  main.appendChild(headEl(isBoss?'Owner controls':'Account','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
+  main.appendChild(headEl(isBoss?'Owner controls':'General','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
 
   const allTabs=[
     {id:'systems',label:'Branches name',roles:['boss','incharge']},
-    {id:'account',label:'Account',roles:['boss','incharge','staff']},
+    {id:'account',label:'General',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
   ].filter(t=>t.roles.includes(SESSION.role));
 
@@ -4985,24 +5509,6 @@ function settingsAppearance(main){
     sw.appendChild(s);
   });
   af.appendChild(sw);c.appendChild(af);
-  // date format
-  const df=el('div','field');df.style.marginTop='14px';df.appendChild(el('label',null,'Date format'));
-  const dfRow=el('div','seg');
-  ['DD/MM/YYYY','MM/DD/YYYY','YYYY/DD/MM'].forEach(fmt=>{
-    const btn=el('button',b.dateFormat===fmt?'on dry':'',fmt);
-    btn.onclick=()=>{b.dateFormat=fmt;save();buildNav();render();toast('Date format updated','good');[...dfRow.children].forEach(x=>x.classList.remove('on','dry'));btn.className='on dry';};
-    dfRow.appendChild(btn);
-  });
-  df.appendChild(dfRow);c.appendChild(df);
-  // time format
-  const tf=el('div','field');tf.style.marginTop='14px';tf.appendChild(el('label',null,'Time format'));
-  const tfRow=el('div','seg');
-  [{val:'24',label:'24-hour (14:30)'},{val:'12',label:'12-hour (2:30 pm)'}].forEach(opt=>{
-    const btn=el('button',b.timeFormat===opt.val?'on dry':'',opt.label);
-    btn.onclick=()=>{b.timeFormat=opt.val;save();buildNav();render();toast('Time format updated','good');[...tfRow.children].forEach(x=>x.classList.remove('on','dry'));btn.className='on dry';};
-    tfRow.appendChild(btn);
-  });
-  tf.appendChild(tfRow);c.appendChild(tf);
   main.appendChild(c);
 }
 
@@ -5225,8 +5731,9 @@ function settingsSystems(main){
       const td5=el('td');
       if(isBoss||isIncharge){
         td5.appendChild(saveBtn);
-        // Only allow delete if not the default system AND branch has more than 1 system
-        if(isBoss&&branchSystems.length>1&&!sys.isDefault){
+        // Only allow delete of an ADDED (non-default) system, and only when the branch has more than 1 system.
+        // Boss and in-charge may delete added systems in their branch; the default/only system is protected.
+        if((isBoss||isIncharge)&&branchSystems.length>1&&!sys.isDefault){
           const delSys=el('button','btn ghost tiny','Delete');delSys.style.marginLeft='4px';
           delSys.onclick=()=>confirmModal('Delete "'+sys.label+'"?','Deletes all items, deliveries and suppliers in this system.',()=>{
             if(DB.systems.length<=1){toast('Cannot delete the only system','bad');return;}
@@ -5371,6 +5878,31 @@ function settingsSystems(main){
 
 /* ---- Account ---- */
 function settingsAccount(main){
+  // Date & time format — editable by owner and in-charge (applies app-wide).
+  if(SESSION.role==='boss'||SESSION.role==='incharge'){
+    const b=DB.brand;
+    const dtc=el('div','card pad');dtc.style.marginBottom='12px';
+    dtc.innerHTML='<div class="suptag" style="font-weight:700;margin-bottom:8px">Date &amp; time format</div>';
+    // Date format
+    const df=el('div','field');df.appendChild(el('label',null,'Date format'));
+    const dfRow=el('div','seg');
+    ['DD/MM/YYYY','YYYY/DD/MM','MM/DD/YYYY'].forEach(fmt=>{
+      const btn=el('button',b.dateFormat===fmt?'on dry':'',fmt);
+      btn.onclick=()=>{b.dateFormat=fmt;save();buildNav();render();toast('Date format updated','good');};
+      dfRow.appendChild(btn);
+    });
+    df.appendChild(dfRow);dtc.appendChild(df);
+    // Time format
+    const tf=el('div','field');tf.style.marginTop='14px';tf.appendChild(el('label',null,'Time format'));
+    const tfRow=el('div','seg');
+    [{val:'24',label:'24-hour (14:30)'},{val:'12',label:'12-hour (2:30 pm)'}].forEach(opt=>{
+      const btn=el('button',b.timeFormat===opt.val?'on dry':'',opt.label);
+      btn.onclick=()=>{b.timeFormat=opt.val;save();buildNav();render();toast('Time format updated','good');};
+      tfRow.appendChild(btn);
+    });
+    tf.appendChild(tfRow);dtc.appendChild(tf);
+    main.appendChild(dtc);
+  }
   const nc=el('div','card pad');nc.style.marginBottom='12px';
   const nameI=input(SESSION.name,'Full name');
   nc.appendChild(field('Display name',nameI,'Shown in greetings, logs and history.'));
@@ -5436,15 +5968,48 @@ function settingsData(main){
   main.appendChild(ver);
   const dz=el('div','card pad');
   dz.innerHTML=`<div class="suptag" style="margin-bottom:12px">${USE_SUPABASE?'Data syncs to the cloud and is cached on this device.':'All data is stored on this device.'} Export a backup at any time. Only the owner can import one.</div>`;
-  const exp=el('button','btn ghost sm','Export backup (JSON)');exp.onclick=exportData;dz.appendChild(exp);
+  const exp=el('button','btn ghost sm','Export backup (JSON)');exp.onclick=()=>exportData();dz.appendChild(exp);
   if(isBoss){
     const imp=el('button','btn ghost sm','Import backup');imp.style.marginLeft='8px';
     const impFile=el('input');impFile.type='file';impFile.accept='application/json';impFile.style.display='none';
-    impFile.onchange=()=>{const f=impFile.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.items||!d.users){toast('File does not look like a StockLine backup','bad');return;}DB=d;save();toast('Backup imported','good');buildNav();applyBrand();render();}catch(e){toast('Could not read file','bad');}};r.readAsText(f);};
-    imp.onclick=()=>confirmModal('Import backup?','This replaces ALL current data with the file you choose. This cannot be undone.',()=>impFile.click());
+    impFile.onchange=()=>{const f=impFile.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{
+      let parsed;try{parsed=JSON.parse(r.result);}catch(e){toast('Could not read file','bad');return;}
+      const res=await verifyBackup(parsed);
+      if(!res.ok){toast(res.error,'bad');return;}
+      // Describe what's being restored so the owner can confirm knowingly.
+      const m=res.meta;
+      const desc=(m?('Exported '+new Date(m.exportedAt).toLocaleString()+' by '+(m.exportedBy||'?')+'.\n'+
+        (m.counts?(m.counts.items+' items, '+m.counts.users+' users, '+m.counts.suppliers+' suppliers.'):'')):'Legacy backup (no metadata).')+
+        (res.warn?('\n\n⚠ '+res.warn):'\n\n✓ Integrity verified.');
+      confirmModal('Restore this backup?',desc+'\n\nThis replaces ALL current data. A safety snapshot of your current data will be saved first.',()=>{
+        autoSnapshot('before-import');
+        DB=res.data;save();toast('Backup restored','good');buildNav();applyBrand();render();
+      });
+    };r.readAsText(f);};
+    imp.onclick=()=>impFile.click();
     dz.appendChild(imp);dz.appendChild(impFile);
+
+    // Restore from an automatic local snapshot (rollback a bad edit/import).
+    const snaps=listSnapshots();
+    const snapBtn=el('button','btn ghost sm','Restore a snapshot');snapBtn.style.marginTop='8px';snapBtn.style.display='block';
+    snapBtn.onclick=()=>{
+      const list=listSnapshots();
+      if(!list.length){toast('No snapshots yet — they are saved automatically before risky actions.','good');return;}
+      const body=el('div');
+      body.innerHTML='<div class="suptag" style="margin-bottom:10px">Pick a point to roll back to. Your current data is snapshotted first.</div>';
+      list.forEach((s,i)=>{
+        const row=el('button','btn ghost sm');row.style.cssText='display:block;width:100%;text-align:left;margin-bottom:6px';
+        const c=s.data&&s.data.items?s.data.items.length:0;
+        row.textContent=new Date(s.at).toLocaleString()+'  ·  '+s.reason+'  ·  '+c+' items';
+        row.onclick=()=>{autoSnapshot('before-snapshot-restore');DB=s.data;save();closeModal();buildNav();applyBrand();render();toast('Snapshot restored','good');};
+        body.appendChild(row);
+      });
+      const foot=el('div');foot.style.width='100%';const cx=el('button','btn ghost','Cancel');cx.style.width='100%';cx.onclick=closeModal;foot.appendChild(cx);
+      openModal('Restore snapshot',body,foot);
+    };
+    dz.appendChild(snapBtn);
     const reset=el('button','btn ghost sm','Reset to demo data');reset.style.marginTop='8px';reset.style.display='block';
-    reset.onclick=()=>confirmModal('Reset everything?','All data will be replaced with demo data.',()=>{DB=seed();save();buildNav();applyBrand();render();toast('Reset to demo');});
+    reset.onclick=()=>confirmModal('Reset everything?','All data will be replaced with demo data. A safety snapshot is saved first.',()=>{autoSnapshot('before-reset');DB=seed();save();buildNav();applyBrand();render();toast('Reset to demo');});
     dz.appendChild(reset);
     const cleanupBtn=el('button','btn ghost sm','Clean up old systems');cleanupBtn.style.marginTop='8px';cleanupBtn.style.display='block';
     cleanupBtn.onclick=()=>{
@@ -5469,6 +6034,20 @@ function settingsData(main){
     dz.appendChild(cleanupBtn);
   }
   main.appendChild(dz);
+  const trust=el('div','card pad');trust.style.marginTop='14px';
+  trust.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+    <div>
+      <b>Trust & security</b>
+      <div class="suptag" style="margin-top:6px;line-height:1.6">
+        Cloud data is designed for owner-only access through Supabase Row Level Security.
+        Staff join requests use a separate approval queue and do not read or write the private business database.
+        Backups include metadata plus a SHA-256 integrity check before restore.
+      </div>
+    </div>
+    <span class="chip ok" style="font-size:11px">Paid-ready controls</span>
+  </div>
+  <div class="suptag" style="margin-top:10px">Run <b>supabase-security.sql</b> in Supabase SQL Editor to enforce the database rules.</div>`;
+  main.appendChild(trust);
 }
 
 function peekWrap(inp){
@@ -5476,10 +6055,101 @@ function peekWrap(inp){
   const p=el('button','peek','Show');p.type='button';p.onclick=()=>{const s=inp.type==='text';inp.type=s?'password':'text';p.textContent=s?'Show':'Hide';};
   w.appendChild(p);return w;
 }
-function exportData(){
-  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
-  const a=el('a');a.href=URL.createObjectURL(blob);a.download=(DB.brand.appName||'stockline')+'-backup.json';a.click();
-  toast('Backup downloaded','good');
+/* ---------- Audit-grade backup ----------
+   A backup is wrapped in an envelope with metadata and a SHA-256 checksum so
+   integrity can be verified on restore. Format:
+   { _stockline_backup:1, meta:{...}, checksumAlg:"SHA-256", checksum:"<hex>", data:{...DB} }
+*/
+const BACKUP_FORMAT=1;
+// Deterministic stringify (sorted keys) so the checksum is stable regardless
+// of property insertion order.
+function stableStringify(v){
+  if(v===null||typeof v!=='object')return JSON.stringify(v);
+  if(Array.isArray(v))return '['+v.map(stableStringify).join(',')+']';
+  const keys=Object.keys(v).sort();
+  return '{'+keys.map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',')+'}';
+}
+// Small local checksum for rolling browser snapshots. Downloaded backups use
+// SHA-256 below; this stays only for quick local snapshot labels.
+function checksumOf(obj){
+  const str=stableStringify(obj);
+  let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=(h*0x01000193)>>>0;}
+  return ('0000000'+h.toString(16)).slice(-8);
+}
+async function sha256Hex(str){
+  if(window.crypto&&crypto.subtle&&window.TextEncoder){
+    const bytes=new TextEncoder().encode(str);
+    const digest=await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  // Very old browsers: fall back to the local checksum and label it honestly.
+  return checksumOf(JSON.parse(str));
+}
+async function auditChecksumOf(obj){return sha256Hex(stableStringify(obj));}
+async function buildBackupEnvelope(){
+  const data=DB;
+  const checksum=await auditChecksumOf(data);
+  return {
+    _stockline_backup:BACKUP_FORMAT,
+    meta:{
+      exportedAt:new Date().toISOString(),
+      exportedBy:(SESSION&&(SESSION.name||SESSION.username))||'unknown',
+      role:(SESSION&&SESSION.role)||'unknown',
+      appVersion:(typeof APP_VERSION!=='undefined')?APP_VERSION:'?',
+      establishment:(DB.venue&&DB.venue.name)||(DB.brand&&DB.brand.appName)||'',
+      counts:{
+        items:(DB.items||[]).length,
+        users:(DB.users||[]).length,
+        suppliers:(DB.suppliers||[]).length,
+        deliveries:(DB.deliveries||[]).length
+      }
+    },
+    checksumAlg:(window.crypto&&crypto.subtle&&window.TextEncoder)?'SHA-256':'FNV-1a-32',
+    checksum,
+    data
+  };
+}
+// Validate an imported object. Returns {ok, data, warn}. Accepts both the new
+// envelope format and a bare legacy DB object (older backups).
+async function verifyBackup(obj){
+  if(obj&&obj._stockline_backup){
+    if(!obj.data||typeof obj.data!=='object')return{ok:false,error:'Backup envelope has no data.'};
+    const expect=obj.checksum;
+    const got=obj.checksumAlg==='SHA-256'?await auditChecksumOf(obj.data):checksumOf(obj.data);
+    if(expect&&expect!==got)return{ok:false,error:'Integrity check FAILED — file may be corrupted or altered (checksum '+got+' ≠ '+expect+').'};
+    if(!obj.data.items||!obj.data.users)return{ok:false,error:'Backup is missing core fields (items/users).'};
+    return{ok:true,data:obj.data,meta:obj.meta,warn:expect?null:'No checksum in file — integrity not verified.'};
+  }
+  // Legacy bare DB
+  if(obj&&obj.items&&obj.users)return{ok:true,data:obj,meta:null,warn:'Older backup format — no integrity checksum.'};
+  return{ok:false,error:'File does not look like a StockLine backup.'};
+}
+// Rolling local snapshots: keep the last N auto-backups in localStorage so a
+// bad edit/import can be rolled back even without a downloaded file.
+const AUTO_BACKUP_KEY='stockline_snapshots';
+const AUTO_BACKUP_MAX=5;
+function autoSnapshot(reason){
+  try{
+    const key=AUTO_BACKUP_KEY+':'+(ACTIVE_EST_ID||'default');
+    let arr=[];
+    try{arr=JSON.parse(localStorage.getItem(key)||'[]');}catch(e){arr=[];}
+    arr.unshift({at:new Date().toISOString(),reason:reason||'auto',checksum:checksumOf(DB),data:DB});
+    arr=arr.slice(0,AUTO_BACKUP_MAX);
+    localStorage.setItem(key,JSON.stringify(arr));
+  }catch(e){/* storage full or unavailable — non-fatal */}
+}
+function listSnapshots(){
+  try{return JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY+':'+(ACTIVE_EST_ID||'default'))||'[]');}catch(e){return[];}
+}
+
+async function exportData(){
+  const env=await buildBackupEnvelope();
+  const blob=new Blob([JSON.stringify(env,null,2)],{type:'application/json'});
+  const stamp=new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  const a=el('a');a.href=URL.createObjectURL(blob);
+  a.download=((DB.brand&&DB.brand.appName)||'stockline')+'-backup-'+stamp+'.json';a.click();
+  toast('Verified backup downloaded','good');
 }
 
 /* ---------- cut-off reminders ---------- */
@@ -5559,10 +6229,52 @@ async function checkPendingRequests(){
 }
 setInterval(()=>{checkPendingRequests();},30*1000);
 
-/* ---------- PWA: service worker registration ---------- */
+/* ---------- PWA: offline support ----------
+   Primary: a real /sw.js served next to index.html (most reliable, works on iOS).
+   Fallback: an inline Blob service worker, so a single-file deployment with no
+   sw.js still gets offline shell caching where the browser allows it.
+   Either way, all user data already persists in localStorage on every save(). */
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/sw.js').catch(e=>console.warn('SW registration failed:',e));
+    navigator.serviceWorker.register('sw.js')
+      .catch(()=>{
+        // No hosted sw.js (e.g. opened as a single file) — fall back to inline worker.
+        try{
+          const swCode=`
+            const CACHE='stockline-shell-v1';
+            self.addEventListener('install',e=>{
+              self.skipWaiting();
+              e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./']).catch(()=>{})));
+            });
+            self.addEventListener('activate',e=>{
+              e.waitUntil((async()=>{
+                const keys=await caches.keys();
+                await Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)));
+                await self.clients.claim();
+              })());
+            });
+            self.addEventListener('fetch',e=>{
+              const req=e.request;
+              if(req.method!=='GET')return;
+              const url=new URL(req.url);
+              if(url.origin!==location.origin)return;
+              if(req.mode==='navigate'||req.destination==='document'){
+                e.respondWith(
+                  fetch(req).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});return res;})
+                    .catch(()=>caches.match(req).then(r=>r||caches.match('./')))
+                );
+                return;
+              }
+              e.respondWith(
+                caches.match(req).then(cached=>cached||fetch(req).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});return res;}).catch(()=>cached))
+              );
+            });
+          `;
+          const blob=new Blob([swCode],{type:'text/javascript'});
+          navigator.serviceWorker.register(URL.createObjectURL(blob))
+            .catch(e=>console.warn('Inline SW registration failed:',e));
+        }catch(e){console.warn('SW inline setup failed:',e);}
+      });
   });
 }
 // Re-sync to Supabase when connection returns
