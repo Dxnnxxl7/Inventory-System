@@ -947,6 +947,7 @@ function load(){
       if(!d.compliance.schedule)d.compliance.schedule={};
       if(!d.compliance.thresholds)d.compliance.thresholds={};
       if(!d.compliance.actions)d.compliance.actions=[];
+      if(!d.compliance.checkLogs)d.compliance.checkLogs=[];
       if(!d.branches)d.branches=[];
       if(!d.branches.find(b=>b.id==='branch_1')){
         const mainName=d.venue?.name||d.brand?.appName||'Main Branch';
@@ -1563,6 +1564,7 @@ function blankDb(name){
     categories:{[sys1]:[]},
     storeTypes:{[sys1]:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}]},
     pending:[],announcements:[],messages:[],auditLog:[],
+    compliance:{schedule:{},thresholds:{},actions:[],checkLogs:[]},
     allergens:{},categoryFood:{[sys1]:{}},
     notifications:[],wastage:[],stockHistory:[],temperatureLogs:[]
   };
@@ -1764,6 +1766,11 @@ function migrateLegacy(d){
   if(!d.allergens)d.allergens={};if(!d.wastage)d.wastage=[];
   if(!d.stockHistory)d.stockHistory=[];if(!d.temperatureLogs)d.temperatureLogs=[];if(!d.categoryFood)d.categoryFood={kitchen:{},restaurant:{}};
   if(!d.notifications)d.notifications=[];
+  if(!d.compliance)d.compliance={schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  if(!d.compliance.schedule)d.compliance.schedule={};
+  if(!d.compliance.thresholds)d.compliance.thresholds={};
+  if(!d.compliance.actions)d.compliance.actions=[];
+  if(!d.compliance.checkLogs)d.compliance.checkLogs=[];
   if(d._schema&&d._schema<2)return seed();
   d._schema=SCHEMA_VERSION;
   return d;
@@ -2001,6 +2008,7 @@ function navConfig(){
     {id:'order',ic:'🛒',label:'Need to order'},
     {id:'usage',ic:'📉',label:'Daily usage'},
     {id:'temps',ic:'🌡️',label:'Temp log'},
+    {id:'compliance',ic:'✅',label:'Compliance'},
     {id:'history',ic:'📚',label:'History'},
   ];
   if(role==='boss'){
@@ -2022,6 +2030,7 @@ function navConfig(){
     {id:'order',ic:'🛒',label:'Need to order'},
     {id:'usage',ic:'📉',label:'Daily usage'},
     {id:'temps',ic:'🌡️',label:'Temp log'},
+    {id:'compliance',ic:'✅',label:'Compliance'},
     {id:'history',ic:'📚',label:'History'}]};
 }
 function pendingCountFor(scope){return DB.pending.filter(p=>p.scope===scope).length;}
@@ -2382,8 +2391,8 @@ function render(){
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
   saveSessionState();
   const routes={
-    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,
-    usage:pageUsage,temps:pageTemps,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
+    stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,compliance:pageCompliance,
+    usage:pageUsage,temps:pageTemps,compliance:pageCompliance,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
   main.innerHTML='';
@@ -4725,6 +4734,130 @@ function renderCompliancePDF(report){
   }
   const stamp=report.fromISO+'_to_'+report.toISO;
   doc.save((biz.replace(/[^a-z0-9]+/gi,'-'))+'-compliance-'+stamp+'.pdf');
+}
+
+function haccpChecks(){
+  return [
+    {id:'temps',area:'Food safety',check:'Fridges, freezers and hot/cold holding are within safe limits.',law:'Food safety temperature control / HACCP CCP'},
+    {id:'receiving',area:'Food safety',check:'Deliveries were checked for temperature, damage, expiry and contamination.',law:'Approved supplier and receiving control'},
+    {id:'storage',area:'Food safety',check:'Food is labelled, dated, covered, separated and stored off the floor.',law:'Cross-contamination and traceability control'},
+    {id:'allergens',area:'Food safety',check:'Allergen information is accurate and allergen items are separated where needed.',law:'Allergen management'},
+    {id:'cleaning',area:'Food safety',check:'Cleaning and sanitising tasks are complete for food contact surfaces.',law:'Cleaning and sanitation prerequisite program'},
+    {id:'pest',area:'Food safety',check:'No pest activity, droppings, damaged packaging or entry points observed.',law:'Pest control prerequisite program'},
+    {id:'hygiene',area:'Food safety',check:'Handwashing, illness reporting, hair restraint and protective clothing are followed.',law:'Personal hygiene requirements'},
+    {id:'chemicals',area:'Work health and safety',check:'Chemicals are labelled, stored away from food and used with correct PPE.',law:'WHS hazardous substances control'},
+    {id:'slips',area:'Work health and safety',check:'Floors, walkways and exits are clear, dry and free from trip hazards.',law:'Workplace health and safety duty of care'},
+    {id:'equipment',area:'Work health and safety',check:'Equipment guards, cords, gas/electrical items and sharp tools are safe to use.',law:'Plant/equipment safety'}
+  ];
+}
+function todaysComplianceLog(scope){
+  const start=new Date().setHours(0,0,0,0);
+  return ((DB.compliance||{}).checkLogs||[]).find(l=>l.scope===scope&&l.ts>=start);
+}
+function complianceChecklistModal(scope,existing){
+  DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  DB.compliance.checkLogs=DB.compliance.checkLogs||[];
+  const checks=haccpChecks();
+  const answers={...(existing?.answers||{})};
+  const body=el('div');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px">HACCP-based daily check for '+esc(scopeLabel(scope))+'. Mark each control. Failed checks require corrective action.</div>';
+  checks.forEach(ch=>{
+    const row=el('div','card pad');row.style.marginBottom='8px';
+    row.innerHTML='<div class="suptag">'+esc(ch.area)+' · '+esc(ch.law)+'</div><b style="font-size:14px">'+esc(ch.check)+'</b>';
+    const seg=el('div','seg');seg.style.marginTop='8px';
+    [['pass','Pass'],['fail','Fail'],['na','N/A']].forEach(([v,l])=>{
+      const b=el('button',answers[ch.id]===v?'on':'',l);
+      b.onclick=()=>{answers[ch.id]=v;[...seg.children].forEach(x=>x.className='');b.className='on';refreshCorrective();};
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);body.appendChild(row);
+  });
+  const corrective=input(existing?.corrective||'','Required for failed checks: what did you do?');
+  const correctiveField=field('Corrective action',corrective,'Examples: discarded food, cleaned area, isolated equipment, called maintenance, retrained staff.');
+  body.appendChild(correctiveField);
+  const note=input(existing?.note||'','Optional notes');
+  body.appendChild(field('Notes',note));
+  const err=el('div','err');body.appendChild(err);
+  function refreshCorrective(){
+    correctiveField.style.display=Object.values(answers).includes('fail')?'block':'none';
+  }
+  refreshCorrective();
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
+  const saveBtn=el('button','btn brass',existing?'Save checklist':'Complete checklist');saveBtn.style.flex='2';
+  saveBtn.onclick=()=>{
+    const missing=checks.filter(ch=>!answers[ch.id]);
+    if(missing.length){err.textContent='Complete every check before saving.';return;}
+    const failed=checks.filter(ch=>answers[ch.id]==='fail');
+    if(failed.length&&!corrective.value.trim()){err.textContent='Corrective action is required for failed checks.';return;}
+    const rec={id:existing?.id||uid(),scope,ts:existing?.ts||now(),answers,corrective:corrective.value.trim(),note:note.value.trim(),byId:SESSION.id,byName:SESSION.name};
+    if(existing)Object.assign(existing,rec);
+    else DB.compliance.checkLogs.unshift(rec);
+    if(failed.length){
+      DB.compliance.actions=DB.compliance.actions||[];
+      DB.compliance.actions.unshift({id:uid(),scope,ts:now(),readings:'HACCP/WHS checklist: '+failed.map(f=>f.check).join('; '),action:rec.corrective,byId:SESSION.id,byName:SESSION.name});
+      logAudit('Compliance corrective action',failed.map(f=>f.id).join(', ')+' -> '+rec.corrective,scope);
+    }else{
+      logAudit('Compliance checklist completed','All HACCP/WHS checks passed or N/A',scope);
+    }
+    save();closeModal();render();toast('Compliance checklist saved','good');
+  };
+  foot.appendChild(cancel);foot.appendChild(saveBtn);
+  openModal('Daily compliance checklist',body,foot);
+}
+function pageCompliance(main){
+  const scope=activeScope();
+  DB.compliance=DB.compliance||{schedule:{},thresholds:{},actions:[],checkLogs:[]};
+  DB.compliance.checkLogs=DB.compliance.checkLogs||[];
+  main.appendChild(headEl('HACCP based','Compliance','Workplace health and safety plus food safety controls for '+scopeLabel(scope)+'.'));
+  const bar=el('div');scopeTabs(bar,()=>render());main.appendChild(bar);
+
+  const tempStatus=complianceStatus(scope,todayISO());
+  const todayLog=todaysComplianceLog(scope);
+  const failed=todayLog?Object.values(todayLog.answers||{}).filter(v=>v==='fail').length:0;
+  const top=el('div','card pad');top.style.marginBottom='14px';
+  const checklistState=todayLog?(failed?'Attention required':'Complete'):'Due today';
+  const checklistColor=todayLog?(failed?'var(--bad)':'var(--sage)'):'#b5862f';
+  const tempText={complete:'Temp checks complete',pending:'Temp checks pending',attention:'Temp checks missed',none:'No temp schedule'}[tempStatus]||'Temp checks';
+  top.innerHTML=`<div class="flex-between" style="gap:12px;flex-wrap:wrap">
+    <div><b style="font-size:18px">Daily compliance status</b><div class="suptag">Food safety legislation, HACCP controls and workplace health/safety checks.</div></div>
+    <span class="chip" style="font-size:11px;color:${checklistColor};border-color:${checklistColor}">${esc(checklistState)}</span>
+  </div>
+  <div class="stat-row" style="margin-top:12px">
+    <div class="card stat"><div class="k">Checklist</div><div class="v" style="font-size:18px;color:${checklistColor}">${todayLog?'Done':'Due'}</div></div>
+    <div class="card stat"><div class="k">Failed controls</div><div class="v" style="font-size:18px;color:${failed?'var(--bad)':'var(--sage)'}">${failed}</div></div>
+    <div class="card stat"><div class="k">Temperature</div><div class="v" style="font-size:18px">${esc(tempText)}</div></div>
+  </div>`;
+  const actions=el('div');actions.style.cssText='display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+  const logBtn=el('button','btn brass sm',todayLog?'Edit today checklist':'+ Complete checklist');
+  logBtn.onclick=()=>complianceChecklistModal(scope,todayLog);
+  actions.appendChild(logBtn);
+  const tempBtn=el('button','btn ghost sm','Open temp log');tempBtn.onclick=()=>{CURRENT='temps';render();};
+  actions.appendChild(tempBtn);
+  const reportBtn=el('button','btn ghost sm','Export compliance PDF');reportBtn.onclick=()=>complianceReportModal(scope);
+  actions.appendChild(reportBtn);
+  top.appendChild(actions);main.appendChild(top);
+
+  const guide=el('div','card pad');guide.style.marginBottom='14px';
+  guide.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">HACCP control areas</div>';
+  haccpChecks().forEach(ch=>{
+    const row=el('div','list-card');
+    row.innerHTML='<div><b>'+esc(ch.check)+'</b><div class="suptag">'+esc(ch.area)+' · '+esc(ch.law)+'</div></div>';
+    guide.appendChild(row);
+  });
+  main.appendChild(guide);
+
+  const logs=(DB.compliance.checkLogs||[]).filter(l=>l.scope===scope).slice(0,30);
+  const hist=el('div','card pad');
+  hist.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">Checklist history</div>';
+  if(!logs.length)hist.appendChild(el('div','suptag','No compliance checklist logs yet.'));
+  logs.forEach(l=>{
+    const failCount=Object.values(l.answers||{}).filter(v=>v==='fail').length;
+    const row=el('div','list-card');
+    row.innerHTML='<div class="flex-between"><div><b>'+fmtDate(l.ts)+' '+fmtTime(l.ts)+'</b><div class="suptag">By '+esc(l.byName||'')+(l.note?' · '+esc(l.note):'')+'</div></div><span class="chip '+(failCount?'bad':'ok')+'" style="font-size:11px">'+(failCount?failCount+' failed':'Passed')+'</span></div>'+(l.corrective?'<div class="suptag" style="margin-top:6px"><b>Action:</b> '+esc(l.corrective)+'</div>':'');
+    hist.appendChild(row);
+  });
+  main.appendChild(hist);
 }
 
 function pageTemps(main){
