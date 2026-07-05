@@ -1571,20 +1571,29 @@ async function doRegister(){
         await loadSupabaseSDK();
         const client=getAnonClient();
         if(client){
-          await client.from('pending_requests').insert({
+          const pendingPayload={
             id:newUser.id,
             establishment_id:selectedEstId,
             name:newUser.name,
             username:newUser.username,
             auth_user_id:newUser.authId,
+            pass_hash:'supabase-auth-account',
+            pass_salt:newUser.authId||'supabase-auth',
             email:newUser.email,
             scope:newUser.scope,
             branch_id:newUser.branchId,
             created_at:new Date(newUser.pendingAt).toISOString()
-          });
+          };
+          const {error:pendingError}=await client.from('pending_requests').insert(pendingPayload);
+          if(pendingError)throw pendingError;
           queued=true;
         }
-      }catch(e){console.warn('Supabase pending save failed:',e);}
+      }catch(e){console.warn('Supabase pending save failed:',e);$('#regMsg').textContent='Account created, but the approval request could not be sent. Run the updated supabase-security.sql, then try again.';}
+    }
+    if(USE_SUPABASE&&!queued){
+      try{await sbSignOut();}catch(e){}
+      $('#regBtn').disabled=false;
+      return;
     }
     if(!queued){
       const estDb=loadEst(selectedEstId);
