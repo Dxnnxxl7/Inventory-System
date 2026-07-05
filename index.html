@@ -1704,6 +1704,31 @@ function saveEst(id,data){
   localStorage.setItem(estDbKey(id),JSON.stringify(data));
 }
 
+function localEstIds(){
+  const ids=['default',ACTIVE_EST_ID,...getEstablishments().map(e=>e.id)];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i)||'';
+      if(k.startsWith('stockline_db_v1_'))ids.push(k.replace('stockline_db_v1_',''));
+    }
+  }catch(e){}
+  return [...new Set(ids.filter(Boolean))];
+}
+function findApprovedLocalStaff(authUser,inputEmail){
+  const email=String(inputEmail||authUser?.email||'').toLowerCase();
+  const authId=authUser?.id||'';
+  for(const id of localEstIds()){
+    const data=(id===ACTIVE_EST_ID?DB:loadEst(id));
+    if(!data||!Array.isArray(data.users))continue;
+    const found=data.users.find(u=>u&&!u.pending&&u.role!=='boss'&&(
+      (authId&&u.authId===authId)||
+      (email&&String(u.email||'').toLowerCase()===email)
+    ));
+    if(found)return{estId:id,data,userId:found.id,email:found.email};
+  }
+  return null;
+}
+
 function createEstablishment(name){
   const ests=getEstablishments();
   const id='est_'+uid();
@@ -2030,8 +2055,20 @@ async function finishSupabaseLogin(authUser,inputEmail){
   }
   const memberships=await sbLoadStaffMemberships(authUser.id);
   if(!memberships.length){
-    const local=DB.users.find(x=>!x.pending&&(x.authId===authUser.id||String(x.email||'').toLowerCase()===String(inputEmail||authUser.email||'').toLowerCase()));
+    let local=DB.users.find(x=>!x.pending&&(x.authId===authUser.id||String(x.email||'').toLowerCase()===String(inputEmail||authUser.email||'').toLowerCase()));
+    if(!local){
+      const hit=findApprovedLocalStaff(authUser,inputEmail);
+      if(hit){
+        ACTIVE_EST_ID=hit.estId;
+        DB=migrateLegacy(hit.data);
+        localStorage.setItem(estDbKey(ACTIVE_EST_ID),JSON.stringify(DB));
+        local=DB.users.find(x=>x.id===hit.userId||String(x.email||'').toLowerCase()===String(hit.email||inputEmail||authUser.email||'').toLowerCase());
+      }
+    }
     if(local&&local.role!=='boss'){
+      local.authId=local.authId||authUser.id;
+      if(!local.passHash)local.authRequired=true;
+      save();
       SESSION=local;$('#authMsg').textContent='';finalizeLogin();
       return true;
     }
