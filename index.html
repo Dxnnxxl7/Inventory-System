@@ -1619,7 +1619,8 @@ async function doRegister(){
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
-    if(USE_SUPABASE){
+    const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||''));
+    if(USE_SUPABASE&&isUuid(selectedEstId)){
       try{
         await loadSupabaseSDK();
         const client=getAnonClient();
