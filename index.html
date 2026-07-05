@@ -1584,11 +1584,21 @@ async function doRegister(){
             branch_id:newUser.branchId,
             created_at:new Date(newUser.pendingAt).toISOString()
           };
-          const {error:pendingError}=await client.from('pending_requests').insert(pendingPayload);
+          let {error:pendingError}=await client.from('pending_requests').insert(pendingPayload);
+          if(pendingError&&String(pendingError.message||'').toLowerCase().includes('auth_user_id')){
+            const legacyPayload=Object.assign({},pendingPayload);
+            delete legacyPayload.auth_user_id;
+            const retry=await client.from('pending_requests').insert(legacyPayload);
+            pendingError=retry.error;
+          }
           if(pendingError)throw pendingError;
           queued=true;
         }
-      }catch(e){console.warn('Supabase pending save failed:',e);$('#regMsg').textContent='Account created, but the approval request could not be sent. Run the updated supabase-security.sql, then try again.';}
+      }catch(e){
+        console.warn('Supabase pending save failed:',e);
+        const detail=e?.message?(' ('+e.message+')'):'';
+        $('#regMsg').textContent='Account created, but the approval request could not be sent'+detail+'. Run the updated supabase-security.sql, then try again.';
+      }
     }
     if(USE_SUPABASE&&!queued){
       try{await sbSignOut();}catch(e){}
@@ -1913,7 +1923,7 @@ function finalizeLogin(){
             const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-            const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id,authRequired:true,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id||'',authRequired:!!req.auth_user_id,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
             if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
             else{
               DB.users.push(reqUser);
@@ -5852,6 +5862,7 @@ function settingsTeam(main){
         const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' ('+( u.email||u.username)+') wants to join.'));
+        if(!u.authId)body.appendChild(el('div','err','This request came through the old approval table. Run supabase-security.sql, then ask them to request again for secure Supabase staff login.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -6314,6 +6325,7 @@ function settingsSystems(main){
         const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SESSION.scope||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' wants to join this branch.'));
+        if(!u.authId)body.appendChild(el('div','err','This request came through the old approval table. Run supabase-security.sql, then ask them to request again for secure Supabase staff login.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -6918,7 +6930,7 @@ async function checkPendingRequests(){
         const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
         const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-        const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id,authRequired:true,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+        const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id||'',authRequired:!!req.auth_user_id,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
         if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
         else{
           DB.users.push(reqUser);
