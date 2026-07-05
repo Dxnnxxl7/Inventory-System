@@ -1562,7 +1562,7 @@ async function doRegister(){
       }else authData=sign.data;
     }
     const authId=authData?.user?.id||SUPABASE_USER?.id||'';
-    const newUser={id:uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:true};
+    const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:true};
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
@@ -1586,7 +1586,7 @@ async function doRegister(){
           };
           const variants=[pendingPayload];
           const noAuth=Object.assign({},pendingPayload);delete noAuth.auth_user_id;variants.push(noAuth);
-          const oldPass=Object.assign({},noAuth,{pass:'supabase-auth-account'});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
+          const oldPass=Object.assign({},noAuth,{pass:'auth:'+newUser.authId});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
           const minimal=Object.assign({},oldPass);delete minimal.pass;variants.push(minimal);
           let pendingError=null;
           for(const payload of variants){
@@ -1928,8 +1928,9 @@ function finalizeLogin(){
             const reqBranch=req.branch_id||'branch_1';
             const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
+            const authId=pendingAuthId(req);
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-            const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id||'',authRequired:!!req.auth_user_id,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
             if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
             else{
               DB.users.push(reqUser);
@@ -1982,6 +1983,11 @@ function userMatchesLogin(user,login){
   const username=String(user?.username||'').toLowerCase();
   const email=String(user?.email||'').toLowerCase();
   return username===login||email===login;
+}
+function pendingAuthId(req){
+  const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const candidates=[req?.auth_user_id,req?.pass_salt,String(req?.pass||'').replace(/^auth:/,''),req?.id].filter(Boolean);
+  return String(candidates.find(v=>uuid.test(String(v)))||'');
 }
 async function finishSupabaseLogin(authUser,inputEmail){
   $('#authMsg').textContent='Loading\u2026';
@@ -5843,8 +5849,9 @@ function settingsVenue(main){
 
 /* ---- Team ---- */
 async function approveStaffUser(u,role,scope,branchId,label){
-  u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=true;
-  delete u.pendingAt;delete u.pass;delete u.passHash;delete u.passSalt;
+  u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
+  delete u.pendingAt;
+  if(u.authId||u.authRequired){delete u.pass;delete u.passHash;delete u.passSalt;}
   if(USE_SUPABASE&&u.authId){
     const {error}=await sbUpsertStaffMembership(u);
     if(error){toast('Approval saved locally, but Supabase membership failed','bad');console.warn('Staff membership:',error);}
@@ -6935,8 +6942,9 @@ async function checkPendingRequests(){
         const reqBranch=req.branch_id||'branch_1';
         const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
+        const authId=pendingAuthId(req);
         const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-        const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id||'',authRequired:!!req.auth_user_id,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
         if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
         else{
           DB.users.push(reqUser);
