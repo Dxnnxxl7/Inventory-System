@@ -5965,6 +5965,20 @@ function settingsTeam(main){
       const ra=el('div','row-actions');
       const editBtn=el('button','btn ghost tiny','Edit');
       ra.appendChild(editBtn);
+      // Re-sync: push this member's Supabase membership again. Fixes staff who
+      // were approved before the staff_members table existed and therefore
+      // can't log in on their own device ("not approved for a business yet").
+      if(u.role!=='boss'&&u.authId&&USE_SUPABASE){
+        const sync=el('button','btn ghost tiny','Re-sync login');
+        sync.onclick=async()=>{
+          sync.disabled=true;sync.textContent='Syncing…';
+          const {error}=await sbUpsertStaffMembership(u);
+          sync.disabled=false;sync.textContent='Re-sync login';
+          if(error){toast('Sync failed: '+(error.message||'run the latest setup SQL first'),'bad');}
+          else{toast(u.name+' can now log in on their own device.','good');}
+        };
+        ra.appendChild(sync);
+      }
       if(u.role!=='boss'&&u.id!==SESSION.id){
         const rm=el('button','btn ghost tiny','Remove');
         rm.onclick=()=>confirmModal('Remove staff?',`${u.name} will no longer be able to log in.`,async()=>{await sbRemoveStaffMembership(u);logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();rTeam();toast('Staff removed');});
