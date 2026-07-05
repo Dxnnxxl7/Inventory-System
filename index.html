@@ -824,6 +824,7 @@ const DB_KEY='stockline_db_v1'; // default establishment
 const EST_REGISTRY='stockline_establishments'; // list of all establishments
 let ACTIVE_EST_ID='default'; // currently active branch id
 const uid=()=>Math.random().toString(36).slice(2,10);
+const uuid=()=>(crypto&&crypto.randomUUID)?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
 const now=()=>Date.now();
 const todayISO=()=>new Date().toISOString().slice(0,10);
 /* Expected delivery for an order placed at orderedTs (ms epoch, defaults to now).
@@ -1580,7 +1581,7 @@ async function doRegister(){
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
     ACTIVE_EST_ID='default';SUPABASE_USER=data?.user||SUPABASE_USER;
     DB=newDb;localStorage.setItem(currentDbKey(),JSON.stringify(DB));
-    await sbSave();
+    try{await sbSave();}catch(e){console.warn('Owner establishment cloud save failed:',e);$('#regMsg').textContent='Account made, but saving your establishment to the cloud failed'+(e?.message?(' ('+e.message+')'):'')+'. Check your Supabase tables.';$('#regBtn').disabled=false;return;}
     SESSION=bossUser;$('#register').style.display='none';$('#regBtn').disabled=false;
     finalizeLogin();
     toast('Welcome '+name+'! You are the owner of '+est+'.','good');
@@ -1625,8 +1626,8 @@ async function doRegister(){
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
-    const isUuid=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v||''));
-    if(USE_SUPABASE&&isUuid(selectedEstId)){
+    const hasEstId=!!String(selectedEstId||'').trim();
+    if(USE_SUPABASE&&hasEstId){
       try{
         await loadSupabaseSDK();
         const client=getAnonClient();
@@ -1636,7 +1637,7 @@ async function doRegister(){
             establishment_id:selectedEstId,
             name:newUser.name,
             username:newUser.username,
-            auth_user_id:newUser.authId,
+            auth_user_id:newUser.authId||null,
             pass_hash:newUser.passHash||'supabase-auth-account',
             pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
             email:newUser.email,
@@ -1672,7 +1673,7 @@ async function doRegister(){
         $('#regMsg').textContent='Account created, but the approval request could not be sent'+detail+'. Run the updated supabase-security.sql, then try again.';
       }
     }
-    if(USE_SUPABASE&&!queued){
+    if(USE_SUPABASE&&!queued&&hasEstId){
       try{await sbSignOut();}catch(e){}
       $('#regBtn').disabled=false;
       return;
