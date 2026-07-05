@@ -1728,6 +1728,20 @@ function findApprovedLocalStaff(authUser,inputEmail){
   }
   return null;
 }
+function findLocalOwner(authUser,inputEmail){
+  const email=String(inputEmail||authUser?.email||'').toLowerCase();
+  const authId=authUser?.id||'';
+  for(const id of localEstIds()){
+    const data=(id===ACTIVE_EST_ID?DB:loadEst(id));
+    if(!data||!Array.isArray(data.users))continue;
+    const boss=data.users.find(u=>u&&u.role==='boss'&&(
+      (authId&&u.authId===authId)||
+      (email&&String(u.email||u.username||'').toLowerCase()===email)
+    ));
+    if(boss)return{estId:id,data,userId:boss.id,email:boss.email||boss.username};
+  }
+  return null;
+}
 
 function createEstablishment(name){
   const ests=getEstablishments();
@@ -2053,6 +2067,19 @@ async function finishSupabaseLogin(authUser,inputEmail){
     renderEstPicker(boss);
     return true;
   }
+  const localOwner=findLocalOwner(authUser,inputEmail);
+  if(localOwner){
+    ACTIVE_EST_ID=localOwner.estId;
+    DB=migrateLegacy(localOwner.data);
+    localStorage.setItem(estDbKey(ACTIVE_EST_ID),JSON.stringify(DB));
+    let boss=DB.users.find(x=>x.id===localOwner.userId)||DB.users.find(x=>x.role==='boss');
+    if(boss){
+      boss.email=inputEmail||authUser.email||boss.email;boss.authId=authUser.id;delete boss.pass;delete boss.passHash;delete boss.passSalt;
+      save();SESSION=boss;$('#authMsg').textContent='';
+      renderEstPicker(boss);
+      return true;
+    }
+  }
   const memberships=await sbLoadStaffMemberships(authUser.id);
   if(!memberships.length){
     let local=DB.users.find(x=>!x.pending&&(x.authId===authUser.id||String(x.email||'').toLowerCase()===String(inputEmail||authUser.email||'').toLowerCase()));
@@ -2072,7 +2099,7 @@ async function finishSupabaseLogin(authUser,inputEmail){
       SESSION=local;$('#authMsg').textContent='';finalizeLogin();
       return true;
     }
-    $('#authMsg').textContent='Your account exists, but it is not approved for a business yet.';
+    $('#authMsg').textContent='Your account exists, but no approved business access was found. Ask the owner to approve or re-sync your login in Settings → Team.';
     return true;
   }
   const m=memberships[0];
