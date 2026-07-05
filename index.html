@@ -1551,18 +1551,25 @@ async function doRegister(){
     const firstScope=(selData.systemIds&&selData.systemIds[0])||'';
     if(!firstScope){$('#regMsg').textContent='This branch has no system available yet. Ask the owner to add one.';$('#regBtn').disabled=false;return;}
     let authData=null;
+    let authLimited=false;
     if(USE_SUPABASE){
       const sign=await sbSignUp(email,pass,{name,username:loginUsername,establishment_id:selectedEstId,branch_id:selectedBranchId});
       if(sign.error&&String(sign.error.message||'').toLowerCase().includes('already')){
         const retry=await sbSignIn(email,pass);
-        if(retry.error){$('#regMsg').textContent='This email already has an account. Log in first, or use the correct password.';$('#regBtn').disabled=false;return;}
-        authData=retry.data;
+        if(retry.error){
+          const retryMsg=String(retry.error.message||'').toLowerCase();
+          if(retryMsg.includes('rate limit')||retryMsg.includes('email rate'))authLimited=true;
+          else{$('#regMsg').textContent='This email already has an account. Log in first, or use the correct password.';$('#regBtn').disabled=false;return;}
+        }else authData=retry.data;
       }else if(sign.error){
-        $('#regMsg').textContent=sign.error.message;$('#regBtn').disabled=false;return;
+        const msg=String(sign.error.message||'').toLowerCase();
+        if(msg.includes('rate limit')||msg.includes('email rate'))authLimited=true;
+        else{$('#regMsg').textContent=sign.error.message;$('#regBtn').disabled=false;return;}
       }else authData=sign.data;
     }
     const authId=authData?.user?.id||SUPABASE_USER?.id||'';
-    const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:true};
+    const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:!!authId};
+    if(!authId)await setUserPassword(newUser,pass);
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
@@ -1577,8 +1584,8 @@ async function doRegister(){
             name:newUser.name,
             username:newUser.username,
             auth_user_id:newUser.authId,
-            pass_hash:'supabase-auth-account',
-            pass_salt:newUser.authId||'supabase-auth',
+            pass_hash:newUser.passHash||'supabase-auth-account',
+            pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
             email:newUser.email,
             scope:newUser.scope,
             branch_id:newUser.branchId,
@@ -1586,7 +1593,7 @@ async function doRegister(){
           };
           const variants=[pendingPayload];
           const noAuth=Object.assign({},pendingPayload);delete noAuth.auth_user_id;variants.push(noAuth);
-          const oldPass=Object.assign({},noAuth,{pass:'auth:'+newUser.authId});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
+          const oldPass=Object.assign({},noAuth,{pass:newUser.authId?('auth:'+newUser.authId):'password-reset-required'});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
           const minimal=Object.assign({},oldPass);delete minimal.pass;variants.push(minimal);
           let pendingError=null;
           for(const payload of variants){
@@ -1629,7 +1636,7 @@ async function doRegister(){
     $('#authMsg').textContent='';
     const pm=el('div');
     pm.style.cssText='background:#fff9e6;border:1px solid #f0c040;padding:14px;border-radius:10px;text-align:center;font-size:13px;margin-top:12px;color:#7a5c00;line-height:1.5';
-    pm.textContent='\u23F3 Account created! Waiting for approval from the owner or in-charge. You can log in once approved.';
+    pm.textContent=authId?'\u23F3 Account created! Waiting for approval from the owner or in-charge. You can log in once approved.':'\u23F3 Access request sent! Supabase email signup is rate-limited right now, so the owner can approve this fallback request. Try secure sign-in again later.';
     $('#auth').querySelector('.auth-card').appendChild(pm);
     setTimeout(()=>{try{pm.remove();}catch(e){}},12000);
   }
@@ -1930,7 +1937,7 @@ function finalizeLogin(){
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
             const authId=pendingAuthId(req);
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
             if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
             else{
               DB.users.push(reqUser);
@@ -5875,7 +5882,7 @@ function settingsTeam(main){
         const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' ('+( u.email||u.username)+') wants to join.'));
-        if(!u.authId)body.appendChild(el('div','err','This request came through the old approval table. Run supabase-security.sql, then ask them to request again for secure Supabase staff login.'));
+        if(!u.authId)body.appendChild(el('div','err','Supabase Auth email was rate-limited or the old table was used. You can approve now; later, run supabase-security.sql and have them use Forgot password or request again to fully link Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -6338,7 +6345,7 @@ function settingsSystems(main){
         const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SESSION.scope||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' wants to join this branch.'));
-        if(!u.authId)body.appendChild(el('div','err','This request came through the old approval table. Run supabase-security.sql, then ask them to request again for secure Supabase staff login.'));
+        if(!u.authId)body.appendChild(el('div','err','Supabase Auth email was rate-limited or the old table was used. You can approve now; later, run supabase-security.sql and have them use Forgot password or request again to fully link Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -6944,7 +6951,7 @@ async function checkPendingRequests(){
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
         const authId=pendingAuthId(req);
         const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
         if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
         else{
           DB.users.push(reqUser);
