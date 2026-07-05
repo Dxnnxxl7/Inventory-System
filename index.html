@@ -1013,10 +1013,12 @@ function syncStatus(){
   const h=getSyncHealth();
   const offline=navigator.onLine===false;
   const cloudReady=!!(USE_SUPABASE&&SUPABASE_USER);
-  const failed=!!(h.lastSyncFailAt&&(!h.lastCloudSaveAt||new Date(h.lastSyncFailAt)>new Date(h.lastCloudSaveAt)));
+  const offlineFail=String(h.lastSyncFailReason||'').toLowerCase().includes('offline')||String(h.lastSyncFailReason||'').toLowerCase().includes('working offline');
+  const failed=!!(h.lastSyncFailAt&&(!h.lastCloudSaveAt||new Date(h.lastSyncFailAt)>new Date(h.lastCloudSaveAt))&&!(offlineFail&&!offline));
   if(!USE_SUPABASE)return{color:'transparent',title:'Cloud sync is not configured',message:'Cloud sync is not configured.'};
   if(!cloudReady)return{color:'#aaa',title:'Cloud not linked',message:'Cloud sync is not linked for this login.'};
   if(offline)return{color:'#c0392b',title:'Offline - changes saved locally',message:'You are offline. Changes are saved on this device and will sync when connection returns.'};
+  if(offlineFail&&h.lastSyncFailAt)return{color:'#f0a500',title:'Cloud sync pending',message:'You are back online. Stored will retry the cloud save now.'};
   if(failed)return{color:'#c0392b',title:'Cloud sync failed',message:'Cloud sync failed: '+(h.lastSyncFailReason||'check Supabase setup/RLS')};
   if(h.lastCloudSaveAt)return{color:'var(--sage)',title:'Synced to cloud',message:'Cloud sync is healthy. Last save: '+new Date(h.lastCloudSaveAt).toLocaleString()};
   return{color:'#f0a500',title:'Cloud sync pending',message:'Cloud sync is connected but has not saved yet.'};
@@ -1035,6 +1037,19 @@ function setSyncHealth(patch){
   try{localStorage.setItem(syncHealthKey(),JSON.stringify(h));}catch(e){}
   updateSyncDot();
   return h;
+}
+function retryCloudSaveSoon(reason){
+  if(!(SESSION&&USE_SUPABASE&&SUPABASE_USER)||navigator.onLine===false)return;
+  updateSyncDot();
+  setTimeout(()=>{
+    if(!(SESSION&&USE_SUPABASE&&SUPABASE_USER)||navigator.onLine===false)return;
+    sbSave().then(()=>{
+      if(reason==='online')toast('Back online - synced','good');
+    }).catch(e=>{
+      console.warn('Supabase retry failed:',e);
+      if(reason==='online')toast('Back online, but cloud sync failed','bad');
+    });
+  },350);
 }
 function save(){
   createDailyCloudBackup('daily');
@@ -2064,6 +2079,7 @@ function finalizeLogin(){
   $('#auth').style.display='none';$('#app').style.display='block';
   if(USE_SUPABASE&&SUPABASE_USER)subscribeRealtime();
   CURRENT='today';saveSessionState();buildNav();renderBell();render();
+  retryCloudSaveSoon('login');
   checkCutoffs();
   showLoginGreeting();
 }
@@ -7191,10 +7207,7 @@ if('serviceWorker' in navigator){
 }
 // Re-sync to Supabase when connection returns
 window.addEventListener('online',()=>{
-  updateSyncDot();
-  if(SESSION&&USE_SUPABASE&&SUPABASE_USER){
-    sbSave().then(()=>toast('Back online — synced','good')).catch(()=>toast('Back online, but cloud sync failed','bad'));
-  }
+  retryCloudSaveSoon('online');
 });
 window.addEventListener('offline',()=>{
   setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:'Working offline'});
