@@ -267,6 +267,9 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
 .card.pad{padding:18px}
 .grid{display:grid;gap:14px}
+.metric{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px 14px;min-width:0}
+.metric span{display:block;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px}
+.metric b{display:block;font-size:16px;line-height:1.25;overflow-wrap:anywhere}
 .cols-3{grid-template-columns:repeat(3,1fr)}
 .cols-2{grid-template-columns:repeat(2,1fr)}
 .stat{padding:16px}
@@ -999,11 +1002,24 @@ function load(){
 function currentDbKey(){return estDbKey(ACTIVE_EST_ID);}
 
 // ── SAVE: write to localStorage + Supabase ────────────────────────────────
+function syncHealthKey(){return 'stored_sync_health:'+(ACTIVE_EST_ID||'default');}
+function getSyncHealth(){
+  try{return JSON.parse(localStorage.getItem(syncHealthKey())||'{}')||{};}catch(e){return{};}
+}
+function setSyncHealth(patch){
+  const h=Object.assign(getSyncHealth(),patch||{});
+  try{localStorage.setItem(syncHealthKey(),JSON.stringify(h));}catch(e){}
+  return h;
+}
 function save(){
   createDailyCloudBackup('daily');
   localStorage.setItem(currentDbKey(),JSON.stringify(DB));
   if(USE_SUPABASE&&SUPABASE_USER){
-    sbSave().catch(e=>console.warn('Supabase save failed:',e));
+    if(navigator.onLine===false){
+      setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:'Working offline'});
+    }else{
+      sbSave().catch(e=>console.warn('Supabase save failed:',e));
+    }
   }
 }
 
@@ -1011,14 +1027,18 @@ async function sbSave(){
   const client=sb();if(!client)return;
   const dot=$('#syncDot');if(dot)dot.style.background='#f0a500'; // yellow = saving
   const name=DB.venue?.name||DB.brand?.appName||'Establishment';
-  const {error}=await client.from('establishments').upsert({
-    id:ACTIVE_EST_ID,
-    owner_id:SUPABASE_USER.id,
-    name,
-    data:dataWithoutPlainPasswords(DB),
-    updated_at:new Date().toISOString()
-  },{onConflict:'id'});
-  if(dot)dot.style.background=error?'#c0392b':'var(--sage)'; // red=error, green=ok
+  const payload={name,data:dataWithoutPlainPasswords(DB),updated_at:new Date().toISOString()};
+  const isOwnerSave=SESSION?.role==='boss'||DB.users?.some(u=>u.role==='boss'&&u.authId===SUPABASE_USER?.id);
+  const {error}=isOwnerSave
+    ? await client.from('establishments').upsert(Object.assign({id:ACTIVE_EST_ID,owner_id:SUPABASE_USER.id},payload),{onConflict:'id'})
+    : await client.from('establishments').update(payload).eq('id',ACTIVE_EST_ID);
+  if(error){
+    setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:error.message||'Cloud save failed'});
+    if(dot){dot.style.background='#c0392b';dot.title='Cloud sync failed';}
+    throw error;
+  }
+  setSyncHealth({lastCloudSaveAt:new Date().toISOString(),lastSyncFailReason:''});
+  if(dot){dot.style.background='var(--sage)';dot.title='Synced to cloud';}
 }
 
 // ── LOAD: try Supabase first, fall back to localStorage ──────────────────
@@ -1510,8 +1530,7 @@ async function doRegister(){
     const{data,error}=await sbSignUp(email,pass);
     if(error&&!error.message.includes('already registered')){$('#regMsg').textContent=error.message;$('#regBtn').disabled=false;return;}
     const newDb=blankDb(est);
-    const bossUser={id:'boss',name,username:email,role:'boss',email};
-    await setUserPassword(bossUser,pass);
+    const bossUser={id:'boss',name,username:email,role:'boss',email,authId:data?.user?.id||SUPABASE_USER?.id||''};
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
     ACTIVE_EST_ID='default';SUPABASE_USER=data?.user||SUPABASE_USER;
     DB=newDb;localStorage.setItem(currentDbKey(),JSON.stringify(DB));
@@ -1531,8 +1550,19 @@ async function doRegister(){
     const loginUsername=username||email; // staff use username, fallback to email
     const firstScope=(selData.systemIds&&selData.systemIds[0])||'';
     if(!firstScope){$('#regMsg').textContent='This branch has no system available yet. Ask the owner to add one.';$('#regBtn').disabled=false;return;}
-    const newUser={id:uid(),name,username:loginUsername,role:'staff',email,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now()};
-    await setUserPassword(newUser,pass);
+    let authData=null;
+    if(USE_SUPABASE){
+      const sign=await sbSignUp(email,pass,{name,username:loginUsername,establishment_id:selectedEstId,branch_id:selectedBranchId});
+      if(sign.error&&String(sign.error.message||'').toLowerCase().includes('already')){
+        const retry=await sbSignIn(email,pass);
+        if(retry.error){$('#regMsg').textContent='This email already has an account. Log in first, or use the correct password.';$('#regBtn').disabled=false;return;}
+        authData=retry.data;
+      }else if(sign.error){
+        $('#regMsg').textContent=sign.error.message;$('#regBtn').disabled=false;return;
+      }else authData=sign.data;
+    }
+    const authId=authData?.user?.id||SUPABASE_USER?.id||'';
+    const newUser={id:uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:true};
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
@@ -1546,8 +1576,7 @@ async function doRegister(){
             establishment_id:selectedEstId,
             name:newUser.name,
             username:newUser.username,
-            pass_hash:newUser.passHash,
-            pass_salt:newUser.passSalt,
+            auth_user_id:newUser.authId,
             email:newUser.email,
             scope:newUser.scope,
             branch_id:newUser.branchId,
@@ -1569,6 +1598,7 @@ async function doRegister(){
       estDb.notifications.push({id:uid(),scope:firstScope,text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
       saveEst(selectedEstId,estDb);
     }
+    if(USE_SUPABASE){try{await sbSignOut();}catch(e){}}
     $('#register').style.display='none';$('#regBtn').disabled=false;
     $('#auth').style.display='flex';
     $('#authMsg').textContent='';
@@ -1740,10 +1770,11 @@ async function sbSignIn(email,password){
   return{data,error};
 }
 
-async function sbSignUp(email,password){
+async function sbSignUp(email,password,metadata){
   await loadSupabaseSDK();
   const client=sb();if(!client)return{error:{message:'Supabase not configured'}};
-  const {data,error}=await client.auth.signUp({email,password});
+  const opts=metadata?{data:metadata}:undefined;
+  const {data,error}=await client.auth.signUp({email,password,options:opts});
   if(!error&&data.user)SUPABASE_USER=data.user;
   return{data,error};
 }
@@ -1761,6 +1792,33 @@ async function sbGetSession(){
   const {data}=await client.auth.getSession();
   if(data?.session?.user){SUPABASE_USER=data.session.user;return data.session;}
   return null;
+}
+
+async function sbLoadStaffMemberships(authUserId){
+  const client=sb();if(!client||!authUserId)return[];
+  const {data,error}=await client.from('staff_members')
+    .select('*').eq('auth_user_id',authUserId).eq('approved',true);
+  if(error||!data)return[];
+  return data;
+}
+async function sbUpsertStaffMembership(user){
+  const client=sb();if(!client||!user?.authId)return{error:{message:'No Supabase Auth user linked'}};
+  return client.from('staff_members').upsert({
+    establishment_id:ACTIVE_EST_ID,
+    auth_user_id:user.authId,
+    email:user.email||'',
+    name:user.name||'',
+    username:user.username||user.email||'',
+    role:user.role||'staff',
+    scope:user.scope||'',
+    branch_id:user.branchId||'branch_1',
+    approved:!user.pending,
+    updated_at:new Date().toISOString()
+  },{onConflict:'establishment_id,auth_user_id'});
+}
+async function sbRemoveStaffMembership(user){
+  const client=sb();if(!client||!user?.authId)return;
+  await client.from('staff_members').delete().eq('establishment_id',ACTIVE_EST_ID).eq('auth_user_id',user.authId);
 }
 
 // Load all establishments from Supabase for this boss
@@ -1845,8 +1903,11 @@ function finalizeLogin(){
             const reqBranch=req.branch_id||'branch_1';
             const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
-            if(!DB.users.find(u=>u.id===req.id)){
-              DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
+            const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
+            const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id,authRequired:true,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
+            else{
+              DB.users.push(reqUser);
               changed=true;
             }
           });
@@ -1887,7 +1948,7 @@ function finalizeLogin(){
   applyBrand();
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';$('#app').style.display='block';
-  if(SESSION.role==='boss')subscribeRealtime();
+  if(USE_SUPABASE&&SUPABASE_USER)subscribeRealtime();
   CURRENT='today';saveSessionState();buildNav();renderBell();render();
   checkCutoffs();
   showLoginGreeting();
@@ -1896,6 +1957,40 @@ function userMatchesLogin(user,login){
   const username=String(user?.username||'').toLowerCase();
   const email=String(user?.email||'').toLowerCase();
   return username===login||email===login;
+}
+async function finishSupabaseLogin(authUser,inputEmail){
+  $('#authMsg').textContent='Loading\u2026';
+  const ests=await sbLoadEstablishments();
+  if(ests.length){
+    const firstId=ests[0].id;ACTIVE_EST_ID=firstId;
+    const remote=await sbLoad(firstId);
+    if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
+    let boss=DB.users.find(x=>x.role==='boss')||{id:'boss',name:'Owner',username:inputEmail,role:'boss'};
+    boss.email=inputEmail;boss.authId=authUser.id;delete boss.pass;delete boss.passHash;delete boss.passSalt;
+    if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
+    save();SESSION=boss;$('#authMsg').textContent='';
+    renderEstPicker(boss);
+    return true;
+  }
+  const memberships=await sbLoadStaffMemberships(authUser.id);
+  if(!memberships.length){
+    $('#authMsg').textContent='Your account exists, but it is not approved for a business yet.';
+    return true;
+  }
+  const m=memberships[0];
+  ACTIVE_EST_ID=m.establishment_id;
+  const remote=await sbLoad(ACTIVE_EST_ID);
+  if(!remote){$('#authMsg').textContent='Approved account found, but business data could not be loaded. Ask the owner to run the Supabase security SQL.';return true;}
+  DB=migrateLegacy(remote);localStorage.setItem(estDbKey(ACTIVE_EST_ID),JSON.stringify(DB));
+  let staff=DB.users.find(x=>x.authId===authUser.id)||DB.users.find(x=>String(x.email||'').toLowerCase()===String(m.email||inputEmail).toLowerCase());
+  if(!staff){
+    staff={id:uid(),name:m.name||authUser.email,username:m.username||authUser.email,email:authUser.email,role:m.role||'staff',scope:m.scope,branchId:m.branch_id};
+    DB.users.push(staff);
+  }
+  Object.assign(staff,{authId:authUser.id,authRequired:true,email:m.email||authUser.email,role:m.role||staff.role||'staff',scope:m.scope||staff.scope,branchId:m.branch_id||staff.branchId,pending:false});
+  delete staff.pass;delete staff.passHash;delete staff.passSalt;
+  SESSION=staff;$('#authMsg').textContent='';finalizeLogin();
+  return true;
 }
 async function doLogin(){
   $('#authMsg').textContent='';
@@ -1906,56 +2001,42 @@ async function doLogin(){
   // Username/email → local auth (staff / incharge / owner fallback)
   const inputLower=input_.toLowerCase();
   const localUser=DB.users.find(x=>userMatchesLogin(x,inputLower));
+  if(USE_SUPABASE&&localUser&&localUser.role!=='boss'){
+    $('#authMsg').textContent='For secure staff login, use your email address and Supabase password.';
+    return;
+  }
   if(localUser&&localUser.role!=='boss'){
     if(!(await userPassMatches(localUser,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
     await migratePlainPassword(localUser,pass);
     SESSION=localUser;finalizeLogin();return;
   }
-  // Email login → try Supabase (owner)
+  // Email login → try Supabase Auth first (owner or approved staff)
   if(isEmail&&USE_SUPABASE){
     $('#authMsg').textContent='Signing in\u2026';
-    loadSupabaseSDK().then(()=>{
+    loadSupabaseSDK().then(async()=>{
       sbSignIn(input_,pass).then(async({data,error})=>{
         if(error){
           // Supabase failed — try local match by email
           const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-          if(local&&(await userPassMatches(local,pass))){
+          if(local&&!local.authRequired&&(await userPassMatches(local,pass))){
             if(local.pending){$('#authMsg').textContent='Your account is waiting for approval.';return;}
             await migratePlainPassword(local,pass);
             SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;
           }
           $('#authMsg').textContent='Incorrect email or password.';return;
         }
-        $('#authMsg').textContent='Loading\u2026';
-        const ests=await sbLoadEstablishments();
-        if(ests.length===0){
-          const remote=await sbLoad('default');
-          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey('default'),JSON.stringify(DB));}
-          let boss=DB.users.find(x=>x.role==='boss');
-          if(!boss){boss={id:'boss',name:'Owner',username:input_,pass,role:'boss',email:input_};DB.users.push(boss);}
-          else{boss.email=input_;boss.pass=pass;}
-          save();SESSION=boss;$('#authMsg').textContent='';finalizeLogin();
-        }else{
-          const firstId=ests[0].id;ACTIVE_EST_ID=firstId;
-          const remote=await sbLoad(firstId);
-          if(remote){DB=migrateLegacy(remote);localStorage.setItem(estDbKey(firstId),JSON.stringify(DB));}
-          let boss=DB.users.find(x=>x.role==='boss')||{id:'boss',name:'Owner',username:input_,role:'boss'};
-          boss.email=input_;boss.pass=pass;
-          if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
-          save();SESSION=boss;$('#authMsg').textContent='';
-          renderEstPicker(boss);
-        }
+        await finishSupabaseLogin(data.user,input_);
       }).catch(async err=>{
         // Sign-in threw (e.g. network drop mid-request) — fall back to local, else surface the error.
         const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-        if(local&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+        if(local&&!local.authRequired&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
         $('#authMsg').textContent='Could not sign in — check your connection and try again.';
       });
     }).catch(async ()=>{
       // SDK failed to load — fall back to local auth if possible.
       const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-      if(local&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+      if(local&&!local.authRequired&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
       $('#authMsg').textContent='Could not reach the sign-in service — check your connection.';
     });
     return;
@@ -1963,6 +2044,7 @@ async function doLogin(){
   // Username/email → local auth (staff / incharge / owner fallback)
   const u=input_.toLowerCase();
   const user=DB.users.find(x=>userMatchesLogin(x,u));
+  if(user&&user.authRequired){$('#authMsg').textContent='Use your email and Supabase password to log in.';return;}
   if(!user||!(await userPassMatches(user,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
   if(user.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
   await migratePlainPassword(user,pass);
@@ -2036,7 +2118,8 @@ applyBrand();renderQuickRoles();
         $('#register').style.display='none';
         const fp=$('#forgotPassword');if(fp)fp.style.display='none';
         $('#auth').style.display='none';$('#app').style.display='block';
-        if(user.role==='boss')subscribeRealtime();
+        if(USE_SUPABASE&&user.authId)sbGetSession().then(sess=>{if(sess?.user?.id===user.authId){SUPABASE_USER=sess.user;subscribeRealtime();applyBrand();}});
+        else if(user.role==='boss')subscribeRealtime();
         buildNav();renderBell();
         setTimeout(()=>render(),50);
         checkCutoffs();
@@ -4943,7 +5026,7 @@ function complianceScheduleModal(scope){
   const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Save schedule');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     DB.compliance.schedule[scope]=times.slice().sort();
     logAudit('Compliance schedule updated',scopeLabel(scope)+': '+(times.length?times.sort().join(', '):'none'),scope);
     save();closeModal();render();toast('Schedule saved','good');
@@ -5483,7 +5566,8 @@ function pageTeam(main){
     }
     if(u.role!=='boss'&&u.id!==SESSION.id){
       const rm=el('button','btn ghost tiny','Remove');
-      rm.onclick=()=>confirmModal('Remove staff?',`${u.name} (@${u.username}) will no longer be able to log in.`,()=>{
+      rm.onclick=()=>confirmModal('Remove staff?',`${u.name} (@${u.username}) will no longer be able to log in.`,async()=>{
+        await sbRemoveStaffMembership(u);
         logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);
         DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();render();toast('Staff removed');
       });
@@ -5495,8 +5579,8 @@ function pageTeam(main){
 function addUserModal(defaultBranchId){
   const body=el('div');
   const nameI=input('','e.g. Sam Taylor');
+  const emailI=input('','sam@example.com');emailI.type='email';
   const userI=input('','e.g. samt');
-  const passI=input('','At least 4 characters');const passWrap=peekWrap(passI);
   const roleOptions=[{label:'Staff — view, log deliveries and usage',value:'staff'},{label:'In-charge — manage stock, categories, suppliers',value:'incharge'}];
   const roleI=selectEl(roleOptions,'staff');
   const systems=DB.systems||[];
@@ -5515,8 +5599,8 @@ function addUserModal(defaultBranchId){
   buildSysSelect(defBranch);
   branchI.onchange=()=>buildSysSelect(branchI.value);
   body.appendChild(field('Full name',nameI));
-  body.appendChild(field('Username',userI,'Used to log in. No spaces.'));
-  body.appendChild(field('Password',passWrap));
+  body.appendChild(field('Email',emailI,'They will use this email to create their own secure login.'));
+  body.appendChild(field('Username',userI,'Optional display/login label. Supabase login uses email.'));
   body.appendChild(field('Role',roleI));
   if(SESSION.role==='boss')body.appendChild(field('Branch',branchI));
   body.appendChild(field('System',sysWrap));
@@ -5526,19 +5610,18 @@ function addUserModal(defaultBranchId){
   const ok=el('button','btn brass','Add staff');ok.style.flex='2';
   ok.onclick=async()=>{
     const name=nameI.value.trim();
+    const email=emailI.value.trim().toLowerCase();
     const username=userI.value.trim().toLowerCase().replace(/\s+/g,'');
-    const pass=passI.value;
     const sysI=sysWrap.querySelector('select');
     const scope=sysI?sysI.value:(systems[0]?.id||'kitchen');
     if(!name){err.textContent='Enter the person’s name.';return;}
-    if(!username){err.textContent='Enter a username.';return;}
-    if(DB.users.some(u=>String(u.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
-    if(pass.length<4){err.textContent='Password needs at least 4 characters.';return;}
-    const newStaff={id:uid(),name,username,role:roleI.value,scope,branchId:branchI.value||defBranch};
-    await setUserPassword(newStaff,pass);
+    if(!email||!email.includes('@')){err.textContent='Enter a valid email.';return;}
+    if(username&&DB.users.some(u=>String(u.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
+    if(DB.users.some(u=>String(u.email||'').toLowerCase()===email)){err.textContent='That email is already on the team.';return;}
+    const newStaff={id:uid(),name,username:username||email,role:roleI.value,email,scope,branchId:branchI.value||defBranch,authRequired:true,invited:true};
     DB.users.push(newStaff);
-    logAudit('Staff added',`${name} added as ${roleI.value} for ${scopeLabel(scope)}`,scope);
-    save();renderQuickRoles();closeModal();render();toast(name+' added','good');
+    logAudit('Staff invited',`${name} invited as ${roleI.value} for ${scopeLabel(scope)}`,scope);
+    save();renderQuickRoles();closeModal();render();toast(name+' added. Ask them to create an account with that email.','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Add staff member',body,f);
 }
@@ -5546,8 +5629,11 @@ function editStaffModal(u,defaultBranchId){
   const body=el('div');
   const nameI=input(u.name||'','Full name');
   const userI=input(u.username||'','Username');
-  const passI=input('','New password (leave blank to keep)');passI.type='password';
-  const passWrap=peekWrap(passI);
+  let passI=null,passWrap=null;
+  if(!u.authRequired){
+    passI=input('','New password (leave blank to keep)');passI.type='password';
+    passWrap=peekWrap(passI);
+  }
   const systems=DB.systems||[];
   const userBranchId=u.branchId||(systems.find(s=>s.id===u.scope)?.branchId)||defaultBranchId||'branch_1';
   const branches=SESSION.role==='boss'?(DB.branches||[{id:'branch_1',label:'Main Branch'}]):(DB.branches||[]).filter(b=>b.id===(SESSION.branchId||userBranchId));
@@ -5566,7 +5652,8 @@ function editStaffModal(u,defaultBranchId){
   branchI.onchange=()=>buildSysSelect(branchI.value);
   body.appendChild(field('Full name',nameI));
   body.appendChild(field('Username',userI,'Used to log in. No spaces.'));
-  body.appendChild(field('Password',passWrap));
+  if(passWrap)body.appendChild(field('Password',passWrap));
+  else body.appendChild(el('div','suptag','Password is managed by Supabase Auth. Use Forgot password on the login screen to reset it.'));
   body.appendChild(field('Role',roleI));
   if(SESSION.role==='boss')body.appendChild(field('Branch',branchI));
   body.appendChild(field('System',sysWrap));
@@ -5581,21 +5668,24 @@ function editStaffModal(u,defaultBranchId){
     if(!name){err.textContent='Enter the person’s name.';return;}
     if(!username){err.textContent='Enter a username.';return;}
     if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===username)){err.textContent='That username is already taken.';return;}
-    if(passI.value&&passI.value.length<4){err.textContent='Password needs at least 4 characters.';return;}
+    if(passI&&passI.value&&passI.value.length<4){err.textContent='Password needs at least 4 characters.';return;}
     const oldRole=u.role,oldScope=u.scope,oldName=u.name;
     u.name=name;u.username=username;u.role=roleI.value;u.scope=sysI?sysI.value:u.scope;u.branchId=branchI.value||defaultBranchId||u.branchId;
-    if(passI.value)await setUserPassword(u,passI.value);
+    if(passI&&passI.value)await setUserPassword(u,passI.value);
     const changes=[];
     if(oldName!==u.name)changes.push('name: '+oldName+' -> '+u.name);
     if(oldRole!==u.role)changes.push('role: '+oldRole+' -> '+u.role);
     if(oldScope!==u.scope)changes.push('system: '+scopeLabel(oldScope)+' -> '+scopeLabel(u.scope));
-    if(passI.value)changes.push('password changed');
+    if(passI&&passI.value)changes.push('password changed');
+    if(u.authRequired||u.authId){delete u.pass;delete u.passHash;delete u.passSalt;}
+    if(USE_SUPABASE&&u.authId)await sbUpsertStaffMembership(u);
     logAudit('Staff edited',`${u.name}: ${changes.join('; ')||'details saved'}`,u.scope);
     save();renderQuickRoles();closeModal();render();toast('Staff updated','good');
   };
   f.appendChild(cancel);f.appendChild(ok);openModal('Edit staff member',body,f);
 }
 function changePassModal(u){
+  if(u.authRequired||u.authId){toast('Password is managed by Supabase Auth. Use Forgot password on the login screen.','warn');return;}
   const body=el('div');
   body.innerHTML=`<div class="suptag" style="margin-bottom:12px">Changing password for <b>${esc(u.name)}</b> (@${esc(u.username)})</div>`;
   const p=input('','New password');const wrap=peekWrap(p);
@@ -5618,9 +5708,10 @@ function changeRoleModal(u){
   const f=el('div');f.style.display='flex';f.style.gap='10px';f.style.width='100%';
   const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
   const ok=el('button','btn brass','Save role');ok.style.flex='2';
-  ok.onclick=()=>{
+  ok.onclick=async()=>{
     const oldRole=u.role,oldScope=u.scope;
     u.role=roleI.value;u.scope=scopeI.value;
+    if(USE_SUPABASE&&u.authId)await sbUpsertStaffMembership(u);
     logAudit('Staff role changed',`${u.name}: ${oldRole}/${scopeLabel(oldScope)} -> ${u.role}/${scopeLabel(u.scope)}`,u.scope);
     save();renderQuickRoles();closeModal();render();toast('Role updated','good');
   };
@@ -5726,6 +5817,16 @@ function settingsVenue(main){
 }
 
 /* ---- Team ---- */
+async function approveStaffUser(u,role,scope,branchId,label){
+  u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=true;
+  delete u.pendingAt;delete u.pass;delete u.passHash;delete u.passSalt;
+  if(USE_SUPABASE&&u.authId){
+    const {error}=await sbUpsertStaffMembership(u);
+    if(error){toast('Approval saved locally, but Supabase membership failed','bad');console.warn('Staff membership:',error);}
+  }
+  logAudit('Staff approved',`${u.name} approved as ${u.role} for ${label||scopeLabel(u.scope)}`,u.scope);
+  save();
+}
 function settingsTeam(main){
   // Pending approvals — show at top
   const pending=DB.users.filter(u=>u.pending);
@@ -5746,19 +5847,18 @@ function settingsTeam(main){
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=()=>{
-          u.pending=false;u.role=roleI.value;u.scope=scopeI.value;
-          delete u.pendingAt;
-          logAudit('Staff approved',`${u.name} approved as ${u.role} for ${scopeLabel(u.scope)}`,u.scope);
-          save();closeModal();render();
+        ok.onclick=async()=>{
+          await approveStaffUser(u,roleI.value,scopeI.value,u.branchId,scopeLabel(scopeI.value));
+          closeModal();render();
           toast(u.name+' approved as '+roleI.value,'good');
         };
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
       const reject=el('button','btn ghost tiny','Reject');
-      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed from the system.',()=>{
+      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed from the system.',async()=>{
         logAudit('Staff rejected',`${u.name} join request rejected`,u.scope||SESSION.scope);
+        await sbRemoveStaffMembership(u);
         DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected and removed');
       });
       ra.appendChild(approve);ra.appendChild(reject);row.appendChild(ra);pCard.appendChild(row);
@@ -5786,7 +5886,7 @@ function settingsTeam(main){
       ra.appendChild(editBtn);
       if(u.role!=='boss'&&u.id!==SESSION.id){
         const rm=el('button','btn ghost tiny','Remove');
-        rm.onclick=()=>confirmModal('Remove staff?',`${u.name} will no longer be able to log in.`,()=>{logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();rTeam();toast('Staff removed');});
+        rm.onclick=()=>confirmModal('Remove staff?',`${u.name} will no longer be able to log in.`,async()=>{await sbRemoveStaffMembership(u);logAudit('Staff removed',`${u.name} (@${u.username}) removed`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();renderQuickRoles();rTeam();toast('Staff removed');});
         ra.appendChild(rm);
       }
       summary.appendChild(ra);c.appendChild(summary);
@@ -5794,11 +5894,12 @@ function settingsTeam(main){
       const editForm=el('div');editForm.style.display='none';editForm.style.marginTop='12px';editForm.style.borderTop='1px solid var(--line)';editForm.style.paddingTop='12px';
       const nameI=input(u.name,'Full name');
       const userI=input(u.username,'Username');
-      const passI=input('','New password (leave blank to keep)');passI.type='password';
-      const pw=peekWrap(passI);
+      let passI=null,pw=null;
+      if(!u.authRequired&&!u.authId){passI=input('','New password (leave blank to keep)');passI.type='password';pw=peekWrap(passI);}
       editForm.appendChild(field('Name',nameI));
       editForm.appendChild(field('Username',userI));
-      editForm.appendChild(field('Password',pw,'Leave blank to keep current password.'));
+      if(pw)editForm.appendChild(field('Password',pw,'Leave blank to keep current password.'));
+      else editForm.appendChild(el('div','suptag','Password is managed by Supabase Auth.'));
       if(u.role!=='boss'){
         const roleI=selectEl([{label:'Staff \u2014 can view, log deliveries and usage',value:'staff'},{label:'In-charge \u2014 can manage stock, categories and suppliers',value:'incharge'}],u.role||'staff');
         const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),u.scope||visibleSystems()[0]?.id||'kitchen');
@@ -5811,13 +5912,14 @@ function settingsTeam(main){
           if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
           const oldRole=u.role,oldScope=u.scope,oldName=u.name;
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
-          if(passI.value.trim())await setUserPassword(u,passI.value.trim());
+          if(passI&&passI.value.trim())await setUserPassword(u,passI.value.trim());
           u.role=roleI.value;u.scope=scopeI.value;
+          if(USE_SUPABASE&&u.authId)await sbUpsertStaffMembership(u);
           const changes=[];
           if(oldName!==u.name)changes.push('name: '+oldName+' -> '+u.name);
           if(oldRole!==u.role)changes.push('role: '+oldRole+' -> '+u.role);
           if(oldScope!==u.scope)changes.push('system: '+scopeLabel(oldScope)+' -> '+scopeLabel(u.scope));
-          if(passI.value.trim())changes.push('password changed');
+          if(passI&&passI.value.trim())changes.push('password changed');
           logAudit('Staff edited',`${u.name}: ${changes.join('; ')||'details saved'}`,u.scope);
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
@@ -5830,8 +5932,8 @@ function settingsTeam(main){
           if(DB.users.some(x=>x.id!==u.id&&String(x.username||'').toLowerCase()===userI.value.trim().toLowerCase())){toast('Username already taken','bad');return;}
           const oldName=u.name;
           u.name=nameI.value.trim();u.username=userI.value.trim().toLowerCase();
-          if(passI.value.trim())await setUserPassword(u,passI.value.trim());
-          logAudit('Owner account edited',`${oldName} account details saved${passI.value.trim()?' · password changed':''}`,u.scope||SCOPE);
+          if(passI&&passI.value.trim())await setUserPassword(u,passI.value.trim());
+          logAudit('Owner account edited',`${oldName} account details saved${passI&&passI.value.trim()?' · password changed':''}`,u.scope||SCOPE);
           save();renderQuickRoles();rTeam();toast('Saved','good');
         };
         editForm.appendChild(saveBtn);
@@ -6173,7 +6275,7 @@ function settingsSystems(main){
         ra.appendChild(ed);
         if(isBoss){
           const rm=el('button','btn ghost tiny','Remove');
-          rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',()=>{logAudit('Staff removed',`${u.name} removed from ${branch.label}`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
+          rm.onclick=()=>confirmModal('Remove '+u.name+'?','They will no longer be able to log in.',async()=>{await sbRemoveStaffMembership(u);logAudit('Staff removed',`${u.name} removed from ${branch.label}`,u.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Removed');});
           ra.appendChild(rm);
         }
         row.appendChild(ra);
@@ -6207,12 +6309,12 @@ function settingsSystems(main){
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=()=>{u.pending=false;u.role=roleI.value;u.scope=scopeI.value;u.branchId=branch.id;delete u.pendingAt;logAudit('Staff approved',`${u.name} approved as ${u.role} for ${branch.label}`,u.scope);save();closeModal();render();toast(u.name+' approved','good');};
+        ok.onclick=async()=>{await approveStaffUser(u,roleI.value,scopeI.value,branch.id,branch.label);closeModal();render();toast(u.name+' approved','good');};
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
       const reject=el('button','btn ghost tiny','Reject');
-      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed.',()=>{logAudit('Staff rejected',`${u.name} join request rejected for ${branch.label}`,u.scope||SESSION.scope);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected');});
+      reject.onclick=()=>confirmModal('Reject '+u.name+'?','They will be removed.',async()=>{logAudit('Staff rejected',`${u.name} join request rejected for ${branch.label}`,u.scope||SESSION.scope);await sbRemoveStaffMembership(u);DB.users=DB.users.filter(x=>x.id!==u.id);save();render();toast('Rejected');});
       ra.appendChild(approve);ra.appendChild(reject);row.appendChild(ra);
       teamDiv.appendChild(row);
     });
@@ -6275,13 +6377,18 @@ function settingsAccount(main){
   nc.appendChild(nameOk);main.appendChild(nc);
   const pwc=el('div','card pad');pwc.style.marginBottom='12px';
   pwc.innerHTML='<div class="suptag" style="font-weight:700;margin-bottom:8px">Change password</div>';
-  const cur=input('','Current password');const wrap1=peekWrap(cur);
-  const nw=input('','New password');const wrap2=peekWrap(nw);
-  pwc.appendChild(field('Current password',wrap1));pwc.appendChild(field('New password',wrap2));
-  const pErr=el('div','err');pwc.appendChild(pErr);
-  const pOk=el('button','btn brass','Change password');
-  pOk.onclick=async()=>{if(!(await userPassMatches(SESSION,cur.value))){pErr.textContent='Current password is incorrect.';return;}if(nw.value.length<4){pErr.textContent='Use at least 4 characters.';return;}await setUserPassword(SESSION,nw.value);const u=DB.users.find(x=>x.id===SESSION.id);if(u)Object.assign(u,{passHash:SESSION.passHash,passSalt:SESSION.passSalt,pass:undefined});save();renderQuickRoles();pErr.textContent='';cur.value='';nw.value='';toast('Password changed','good');};
-  pwc.appendChild(pOk);main.appendChild(pwc);
+  if(SESSION.authRequired||SESSION.authId){
+    pwc.appendChild(el('div','suptag','Your password is managed by Supabase Auth. Use Forgot password on the login screen to receive a secure reset email.'));
+  }else{
+    const cur=input('','Current password');const wrap1=peekWrap(cur);
+    const nw=input('','New password');const wrap2=peekWrap(nw);
+    pwc.appendChild(field('Current password',wrap1));pwc.appendChild(field('New password',wrap2));
+    const pErr=el('div','err');pwc.appendChild(pErr);
+    const pOk=el('button','btn brass','Change password');
+    pOk.onclick=async()=>{if(!(await userPassMatches(SESSION,cur.value))){pErr.textContent='Current password is incorrect.';return;}if(nw.value.length<4){pErr.textContent='Use at least 4 characters.';return;}await setUserPassword(SESSION,nw.value);const u=DB.users.find(x=>x.id===SESSION.id);if(u)Object.assign(u,{passHash:SESSION.passHash,passSalt:SESSION.passSalt,pass:undefined});save();renderQuickRoles();pErr.textContent='';cur.value='';nw.value='';toast('Password changed','good');};
+    pwc.appendChild(pOk);
+  }
+  main.appendChild(pwc);
   // Supabase email — boss only, shows when Supabase is configured
   if(SESSION.role==='boss'&&USE_SUPABASE){
     const sbc=el('div','card pad');
@@ -6403,20 +6510,65 @@ function settingsData(main){
       <b>Trust & security</b>
       <div class="suptag" style="margin-top:6px;line-height:1.6">
         Cloud data is designed for owner-only access through Supabase Row Level Security.
-        Staff join requests use a separate approval queue and do not read or write the private business database.
+        Staff join requests use Supabase Auth plus an approval queue before private business data can load.
         Backups include metadata plus a SHA-256 integrity check before restore.
-        Plain passwords are redacted from cloud backups and new staff passwords are stored as hashes.
+        Staff passwords are managed by Supabase Auth and are not stored in the business database.
       </div>
     </div>
     <span class="chip ok" style="font-size:11px">Paid-ready controls</span>
   </div>
-  <div class="suptag" style="margin-top:10px">Run <b>supabase-security.sql</b> in Supabase SQL Editor to enforce the database rules. Final paid-product hardening should move every staff login to Supabase Auth.</div>`;
+  <div class="suptag" style="margin-top:10px">Run <b>supabase-security.sql</b> in Supabase SQL Editor to enforce the database rules and staff membership access.</div>`;
   main.appendChild(trust);
+}
+function backupHealthCard(){
+  const list=(DB.cloudBackups||[]).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
+  const lastBackup=list[0]||null;
+  const h=getSyncHealth();
+  const offline=navigator.onLine===false;
+  const cloudReady=!!(USE_SUPABASE&&SUPABASE_USER);
+  const failAfterSuccess=!!(h.lastSyncFailAt&&(!h.lastCloudSaveAt||new Date(h.lastSyncFailAt)>new Date(h.lastCloudSaveAt)));
+  const cloudStatus=!cloudReady?'Cloud not linked':offline?'Offline':failAfterSuccess?'Sync needs attention':'Cloud save healthy';
+  const cloudClass=!cloudReady||offline||failAfterSuccess?'warn':'ok';
+  const backupClass=lastBackup?'ok':'warn';
+  const card=el('div','card pad');card.style.marginBottom='14px';
+  card.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+    <div><b>Backup health</b>
+      <div class="suptag" style="margin-top:6px;line-height:1.6">Shows whether this device is saving to cloud and whether backup history is being created.</div>
+    </div>
+    <span class="chip ${cloudClass}" style="font-size:11px">${esc(cloudStatus)}</span>
+  </div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:14px">
+    <div class="metric"><span>Last cloud save</span><b>${h.lastCloudSaveAt?new Date(h.lastCloudSaveAt).toLocaleString():'none yet'}</b></div>
+    <div class="metric"><span>Last backup</span><b>${lastBackup?new Date(lastBackup.at).toLocaleString():'none yet'}</b></div>
+    <div class="metric"><span>Cloud status</span><b>${cloudReady?(offline?'Offline':'Connected'):'Not linked'}</b></div>
+    <div class="metric"><span>Backup history</span><b>${list.length}/30</b></div>
+  </div>`;
+  const warns=[];
+  if(!cloudReady)warns.push('Cloud sync is not linked, so saves and backup history stay on this device.');
+  if(offline)warns.push('You are working offline. Changes are saved locally and will sync when connection returns.');
+  if(failAfterSuccess)warns.push('Last sync failed: '+(h.lastSyncFailReason||'Cloud save failed')+'. Last failed at '+new Date(h.lastSyncFailAt).toLocaleString()+'.');
+  if(!lastBackup)warns.push('No backup has been created yet. Create one now or save data to start daily backups.');
+  if(warns.length){
+    const box=el('div','card pad');box.style.cssText='margin-top:12px;background:#fff8eb;border-color:#e7d4ae';
+    box.innerHTML='<b>Attention</b><div class="suptag" style="margin-top:6px;line-height:1.6">'+warns.map(esc).join('<br>')+'</div>';
+    card.appendChild(box);
+  }
+  const actions=el('div','row-actions');actions.style.cssText='margin-top:12px;justify-content:flex-start;flex-wrap:wrap';
+  const refresh=el('button','btn ghost sm','Refresh status');refresh.onclick=()=>render();
+  actions.appendChild(refresh);
+  if(cloudReady){
+    const retry=el('button','btn brass sm','Retry cloud save');
+    retry.onclick=async()=>{try{await sbSave();toast('Cloud save healthy','good');render();}catch(e){toast('Cloud save failed','bad');render();}};
+    actions.appendChild(retry);
+  }
+  card.appendChild(actions);
+  return card;
 }
 function settingsBackupsAudit(main){
   const isBoss=SESSION.role==='boss';
   const isIncharge=SESSION.role==='incharge';
   if(!isBoss&&!isIncharge){main.appendChild(emptyState('🔒','Owner or in-charge only.'));return;}
+  main.appendChild(backupHealthCard());
   if(isBoss){
     createDailyCloudBackup('daily');
     const list=(DB.cloudBackups||[]).slice().sort((a,b)=>new Date(b.at)-new Date(a.at));
@@ -6756,8 +6908,11 @@ async function checkPendingRequests(){
         const reqBranch=req.branch_id||'branch_1';
         const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
-        if(!DB.users.find(u=>u.id===req.id)){
-          DB.users.push({id:req.id,name:req.name,username:req.username,pass:req.pass,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at});
+        const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
+        const reqUser={id:req.id,name:req.name,username:req.username,authId:req.auth_user_id,authRequired:true,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+        if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
+        else{
+          DB.users.push(reqUser);
           changed=true;
           // Show notification
           notify(SESSION.role==='boss'?'boss':SESSION.scope,req.name+' has requested to join. Approve in Settings \u2192 Team.','approve',{page:'settings'});
@@ -6826,10 +6981,11 @@ if('serviceWorker' in navigator){
 // Re-sync to Supabase when connection returns
 window.addEventListener('online',()=>{
   if(SESSION&&USE_SUPABASE&&SUPABASE_USER){
-    try{sbSave();toast('Back online — synced','good');}catch(e){}
+    sbSave().then(()=>toast('Back online — synced','good')).catch(()=>toast('Back online, but cloud sync failed','bad'));
   }
 });
 window.addEventListener('offline',()=>{
+  setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:'Working offline'});
   if(SESSION)toast('Offline — changes saved locally','warn');
 });
 
