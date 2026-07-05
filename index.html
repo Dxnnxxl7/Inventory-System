@@ -1593,7 +1593,8 @@ async function doRegister(){
           };
           const variants=[pendingPayload];
           const noAuth=Object.assign({},pendingPayload);delete noAuth.auth_user_id;variants.push(noAuth);
-          const oldPass=Object.assign({},noAuth,{pass:newUser.authId?('auth:'+newUser.authId):'password-reset-required'});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
+          const fallbackPass=newUser.authId?('auth:'+newUser.authId):('hash:'+newUser.passSalt+':'+newUser.passHash);
+          const oldPass=Object.assign({},noAuth,{pass:fallbackPass});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
           const minimal=Object.assign({},oldPass);delete minimal.pass;variants.push(minimal);
           let pendingError=null;
           for(const payload of variants){
@@ -1936,8 +1937,9 @@ function finalizeLogin(){
             const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
             if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
             const authId=pendingAuthId(req);
+            const pw=pendingPasswordFields(req);
             const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+            const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
             if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
             else{
               DB.users.push(reqUser);
@@ -1996,6 +1998,15 @@ function pendingAuthId(req){
   const candidates=[req?.auth_user_id,req?.pass_salt,String(req?.pass||'').replace(/^auth:/,''),req?.id].filter(Boolean);
   return String(candidates.find(v=>uuid.test(String(v)))||'');
 }
+function pendingPasswordFields(req){
+  const out={passHash:req?.pass_hash||'',passSalt:req?.pass_salt||''};
+  const p=String(req?.pass||'');
+  if(!out.passHash&&p.startsWith('hash:')){
+    const parts=p.split(':');
+    out.passSalt=parts[1]||'';out.passHash=parts.slice(2).join(':')||'';
+  }
+  return out;
+}
 async function finishSupabaseLogin(authUser,inputEmail){
   $('#authMsg').textContent='Loading\u2026';
   const ests=await sbLoadEstablishments();
@@ -2039,7 +2050,7 @@ async function doLogin(){
   // Username/email → local auth (staff / incharge / owner fallback)
   const inputLower=input_.toLowerCase();
   const localUser=DB.users.find(x=>userMatchesLogin(x,inputLower));
-  if(USE_SUPABASE&&localUser&&localUser.role!=='boss'){
+  if(USE_SUPABASE&&localUser&&localUser.role!=='boss'&&(localUser.authRequired||localUser.authId)){
     $('#authMsg').textContent='For secure staff login, use your email address and Supabase password.';
     return;
   }
@@ -5856,6 +5867,7 @@ function settingsVenue(main){
 
 /* ---- Team ---- */
 async function approveStaffUser(u,role,scope,branchId,label){
+  if(!u.authId&&!u.passHash){toast('This old request is missing login data. Reject it and ask them to request again.','bad');return false;}
   u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
   delete u.pendingAt;
   if(u.authId||u.authRequired){delete u.pass;delete u.passHash;delete u.passSalt;}
@@ -5865,6 +5877,7 @@ async function approveStaffUser(u,role,scope,branchId,label){
   }
   logAudit('Staff approved',`${u.name} approved as ${u.role} for ${label||scopeLabel(u.scope)}`,u.scope);
   save();
+  return true;
 }
 function settingsTeam(main){
   // Pending approvals — show at top
@@ -5882,13 +5895,13 @@ function settingsTeam(main){
         const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' ('+( u.email||u.username)+') wants to join.'));
-        if(!u.authId)body.appendChild(el('div','err','Supabase Auth email was rate-limited or the old table was used. You can approve now; later, run supabase-security.sql and have them use Forgot password or request again to fully link Supabase Auth.'));
+        if(!u.authId)body.appendChild(el('div','suptag','Temporary fallback login. Run supabase-security.sql later to move this user fully onto Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
         ok.onclick=async()=>{
-          await approveStaffUser(u,roleI.value,scopeI.value,u.branchId,scopeLabel(scopeI.value));
+          const approved=await approveStaffUser(u,roleI.value,scopeI.value,u.branchId,scopeLabel(scopeI.value));if(!approved)return;
           closeModal();render();
           toast(u.name+' approved as '+roleI.value,'good');
         };
@@ -6345,12 +6358,12 @@ function settingsSystems(main){
         const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SESSION.scope||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' wants to join this branch.'));
-        if(!u.authId)body.appendChild(el('div','err','Supabase Auth email was rate-limited or the old table was used. You can approve now; later, run supabase-security.sql and have them use Forgot password or request again to fully link Supabase Auth.'));
+        if(!u.authId)body.appendChild(el('div','suptag','Temporary fallback login. Run supabase-security.sql later to move this user fully onto Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=async()=>{await approveStaffUser(u,roleI.value,scopeI.value,branch.id,branch.label);closeModal();render();toast(u.name+' approved','good');};
+        ok.onclick=async()=>{const done=await approveStaffUser(u,roleI.value,scopeI.value,branch.id,branch.label);if(!done)return;closeModal();render();toast(u.name+' approved','good');};
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
@@ -6950,8 +6963,9 @@ async function checkPendingRequests(){
         const myBranch=SESSION.branchId||((DB.systems||[]).find(s=>s.id===SESSION.scope)?.branchId)||'branch_1';
         if(SESSION.role==='incharge'&&reqBranch!==myBranch)return;
         const authId=pendingAuthId(req);
+        const pw=pendingPasswordFields(req);
         const existing=DB.users.find(u=>u.id===req.id||String(u.email||'').toLowerCase()===String(req.email||'').toLowerCase());
-        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:req.pass_hash,passSalt:req.pass_salt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
+        const reqUser={id:authId||req.id,name:req.name,username:req.username,authId,authRequired:!!authId,passHash:pw.passHash,passSalt:pw.passSalt,role:'staff',email:req.email,scope:req.scope,branchId:req.branch_id,pending:true,pendingAt:req.created_at};
         if(existing)Object.assign(existing,reqUser,{id:existing.id||req.id});
         else{
           DB.users.push(reqUser);
