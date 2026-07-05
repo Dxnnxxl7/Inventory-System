@@ -5868,6 +5868,7 @@ function settingsVenue(main){
 /* ---- Team ---- */
 async function approveStaffUser(u,role,scope,branchId,label){
   if(!u.authId&&!u.passHash){toast('This old request is missing login data. Reject it and ask them to request again.','bad');return false;}
+  const fallback=!u.authId;
   u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
   delete u.pendingAt;
   if(u.authId||u.authRequired){delete u.pass;delete u.passHash;delete u.passSalt;}
@@ -5877,7 +5878,7 @@ async function approveStaffUser(u,role,scope,branchId,label){
   }
   logAudit('Staff approved',`${u.name} approved as ${u.role} for ${label||scopeLabel(u.scope)}`,u.scope);
   save();
-  return true;
+  return {fallback};
 }
 function settingsTeam(main){
   // Pending approvals — show at top
@@ -5895,7 +5896,6 @@ function settingsTeam(main){
         const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' ('+( u.email||u.username)+') wants to join.'));
-        if(!u.authId)body.appendChild(el('div','suptag','Temporary fallback login. Run supabase-security.sql later to move this user fully onto Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
@@ -5903,7 +5903,7 @@ function settingsTeam(main){
         ok.onclick=async()=>{
           const approved=await approveStaffUser(u,roleI.value,scopeI.value,u.branchId,scopeLabel(scopeI.value));if(!approved)return;
           closeModal();render();
-          toast(u.name+' approved as '+roleI.value,'good');
+          toast(u.name+' approved as '+roleI.value+(approved.fallback?' (fallback login)':''),'good');
         };
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
@@ -6358,12 +6358,11 @@ function settingsSystems(main){
         const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SESSION.scope||'kitchen');
         const body=el('div');
         body.appendChild(el('div','suptag',u.name+' wants to join this branch.'));
-        if(!u.authId)body.appendChild(el('div','suptag','Temporary fallback login. Run supabase-security.sql later to move this user fully onto Supabase Auth.'));
         body.appendChild(field('Role',roleI));body.appendChild(field('System',scopeI));
         const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
         const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
         const ok=el('button','btn brass','Approve');ok.style.flex='2';
-        ok.onclick=async()=>{const done=await approveStaffUser(u,roleI.value,scopeI.value,branch.id,branch.label);if(!done)return;closeModal();render();toast(u.name+' approved','good');};
+        ok.onclick=async()=>{const done=await approveStaffUser(u,roleI.value,scopeI.value,branch.id,branch.label);if(!done)return;closeModal();render();toast(u.name+' approved'+(done.fallback?' (fallback login)':''),'good');};
         foot.appendChild(cancel);foot.appendChild(ok);
         openModal('Approve '+u.name,body,foot);
       };
