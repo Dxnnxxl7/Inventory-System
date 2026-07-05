@@ -1006,9 +1006,31 @@ function syncHealthKey(){return 'stored_sync_health:'+(ACTIVE_EST_ID||'default')
 function getSyncHealth(){
   try{return JSON.parse(localStorage.getItem(syncHealthKey())||'{}')||{};}catch(e){return{};}
 }
+function syncStatus(){
+  const h=getSyncHealth();
+  const offline=navigator.onLine===false;
+  const cloudReady=!!(USE_SUPABASE&&SUPABASE_USER);
+  const failed=!!(h.lastSyncFailAt&&(!h.lastCloudSaveAt||new Date(h.lastSyncFailAt)>new Date(h.lastCloudSaveAt)));
+  if(!USE_SUPABASE)return{color:'transparent',title:'Cloud sync is not configured',message:'Cloud sync is not configured.'};
+  if(!cloudReady)return{color:'#aaa',title:'Cloud not linked',message:'Cloud sync is not linked for this login.'};
+  if(offline)return{color:'#c0392b',title:'Offline - changes saved locally',message:'You are offline. Changes are saved on this device and will sync when connection returns.'};
+  if(failed)return{color:'#c0392b',title:'Cloud sync failed',message:'Cloud sync failed: '+(h.lastSyncFailReason||'check Supabase setup/RLS')};
+  if(h.lastCloudSaveAt)return{color:'var(--sage)',title:'Synced to cloud',message:'Cloud sync is healthy. Last save: '+new Date(h.lastCloudSaveAt).toLocaleString()};
+  return{color:'#f0a500',title:'Cloud sync pending',message:'Cloud sync is connected but has not saved yet.'};
+}
+function updateSyncDot(){
+  const dot=$('#syncDot');if(!dot)return;
+  dot.style.display=USE_SUPABASE?'inline-block':'none';
+  if(!USE_SUPABASE)return;
+  const s=syncStatus();
+  dot.style.background=s.color;
+  dot.title=s.title;
+  dot.onclick=()=>toast(s.message,s.color==='#c0392b'?'bad':(s.color==='#f0a500'?'warn':'good'));
+}
 function setSyncHealth(patch){
   const h=Object.assign(getSyncHealth(),patch||{});
   try{localStorage.setItem(syncHealthKey(),JSON.stringify(h));}catch(e){}
+  updateSyncDot();
   return h;
 }
 function save(){
@@ -1024,8 +1046,8 @@ function save(){
 }
 
 async function sbSave(){
-  const client=sb();if(!client)return;
-  const dot=$('#syncDot');if(dot)dot.style.background='#f0a500'; // yellow = saving
+  const client=sb();if(!client){updateSyncDot();return;}
+  const dot=$('#syncDot');if(dot){dot.style.display='inline-block';dot.style.background='#f0a500';dot.title='Saving to cloud...';}
   const name=DB.venue?.name||DB.brand?.appName||'Establishment';
   const payload={name,data:dataWithoutPlainPasswords(DB),updated_at:new Date().toISOString()};
   const isOwnerSave=SESSION?.role==='boss'||DB.users?.some(u=>u.role==='boss'&&u.authId===SUPABASE_USER?.id);
@@ -1034,11 +1056,11 @@ async function sbSave(){
     : await client.from('establishments').update(payload).eq('id',ACTIVE_EST_ID);
   if(error){
     setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:error.message||'Cloud save failed'});
-    if(dot){dot.style.background='#c0392b';dot.title='Cloud sync failed';}
+    updateSyncDot();
     throw error;
   }
   setSyncHealth({lastCloudSaveAt:new Date().toISOString(),lastSyncFailReason:''});
-  if(dot){dot.style.background='var(--sage)';dot.title='Synced to cloud';}
+  updateSyncDot();
 }
 
 // ── LOAD: try Supabase first, fall back to localStorage ──────────────────
@@ -1289,7 +1311,7 @@ function applyBrand(){
   const branchLabel=/^(courallie pub|storedo)$/i.test(String(rawBranchLabel).trim())?'Stored':rawBranchLabel;
   const tv=$('#tbVenue');if(tv)tv.textContent=branchLabel;
   document.title=bizName+' \u2014 '+branchLabel;
-  const dot=$('#syncDot');if(dot){dot.style.display=USE_SUPABASE?'inline-block':'none';if(USE_SUPABASE)dot.title=SUPABASE_USER?'Synced to cloud':'Offline mode';}
+  updateSyncDot();
 }
 function renderQuickRoles(){
   const wrap=$('#quickRoles');wrap.innerHTML='';
@@ -7141,12 +7163,14 @@ if('serviceWorker' in navigator){
 }
 // Re-sync to Supabase when connection returns
 window.addEventListener('online',()=>{
+  updateSyncDot();
   if(SESSION&&USE_SUPABASE&&SUPABASE_USER){
     sbSave().then(()=>toast('Back online — synced','good')).catch(()=>toast('Back online, but cloud sync failed','bad'));
   }
 });
 window.addEventListener('offline',()=>{
   setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:'Working offline'});
+  updateSyncDot();
   if(SESSION)toast('Offline — changes saved locally','warn');
 });
 
