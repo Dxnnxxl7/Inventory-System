@@ -5883,7 +5883,7 @@ async function approveStaffUser(u,role,scope,branchId,label){
     if(error){
       console.warn('Staff membership:',error);
       if(u.passHash){u.authRequired=false;fallback=true;toast('Approved. This person can log in now — finish account setup to enable secure email login.','warn');}
-      else{toast('Couldn\u2019t complete this approval. Please reject and ask them to request access again.','bad');return false;}
+      else{toast('Couldn\u2019t save this approval to the database. Ask the owner to run the latest setup SQL (staff_members table), then approve again.','bad');return false;}
     }else{
       u.authRequired=true;
       delete u.pass;delete u.passHash;delete u.passSalt;
