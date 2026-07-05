@@ -1569,7 +1569,7 @@ async function doRegister(){
     }
     const authId=authData?.user?.id||SUPABASE_USER?.id||'';
     const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:!!authId};
-    if(!authId)await setUserPassword(newUser,pass);
+    await setUserPassword(newUser,pass);
     let queued=false;
     // Push to Supabase approval queue. This intentionally does not mutate the
     // private establishment data blob from an anonymous browser session.
@@ -2023,6 +2023,11 @@ async function finishSupabaseLogin(authUser,inputEmail){
   }
   const memberships=await sbLoadStaffMemberships(authUser.id);
   if(!memberships.length){
+    const local=DB.users.find(x=>!x.pending&&(x.authId===authUser.id||String(x.email||'').toLowerCase()===String(inputEmail||authUser.email||'').toLowerCase()));
+    if(local&&local.role!=='boss'){
+      SESSION=local;$('#authMsg').textContent='';finalizeLogin();
+      return true;
+    }
     $('#authMsg').textContent='Your account exists, but it is not approved for a business yet.';
     return true;
   }
@@ -2050,11 +2055,11 @@ async function doLogin(){
   // Username/email → local auth (staff / incharge / owner fallback)
   const inputLower=input_.toLowerCase();
   const localUser=DB.users.find(x=>userMatchesLogin(x,inputLower));
-  if(USE_SUPABASE&&localUser&&localUser.role!=='boss'&&(localUser.authRequired||localUser.authId)){
+  if(USE_SUPABASE&&!isEmail&&localUser&&localUser.role!=='boss'&&(localUser.authRequired||localUser.authId)){
     $('#authMsg').textContent='For secure staff login, use your email address and Supabase password.';
     return;
   }
-  if(localUser&&localUser.role!=='boss'){
+  if(localUser&&localUser.role!=='boss'&&(!isEmail||!USE_SUPABASE||(!localUser.authRequired&&!localUser.authId))){
     if(!(await userPassMatches(localUser,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
     await migratePlainPassword(localUser,pass);
@@ -2068,7 +2073,7 @@ async function doLogin(){
         if(error){
           // Supabase failed — try local match by email
           const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-          if(local&&!local.authRequired&&(await userPassMatches(local,pass))){
+          if(local&&(!local.authRequired||local.passHash)&&(await userPassMatches(local,pass))){
             if(local.pending){$('#authMsg').textContent='Your account is waiting for approval.';return;}
             await migratePlainPassword(local,pass);
             SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;
@@ -2079,13 +2084,13 @@ async function doLogin(){
       }).catch(async err=>{
         // Sign-in threw (e.g. network drop mid-request) — fall back to local, else surface the error.
         const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-        if(local&&!local.authRequired&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+        if(local&&(!local.authRequired||local.passHash)&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
         $('#authMsg').textContent='Could not sign in — check your connection and try again.';
       });
     }).catch(async ()=>{
       // SDK failed to load — fall back to local auth if possible.
       const local=DB.users.find(x=>userMatchesLogin(x,input_.toLowerCase()));
-      if(local&&!local.authRequired&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
+      if(local&&(!local.authRequired||local.passHash)&&(await userPassMatches(local,pass))&&!local.pending){await migratePlainPassword(local,pass);SESSION=local;$('#authMsg').textContent='';finalizeLogin();return;}
       $('#authMsg').textContent='Could not reach the sign-in service — check your connection.';
     });
     return;
@@ -5868,13 +5873,21 @@ function settingsVenue(main){
 /* ---- Team ---- */
 async function approveStaffUser(u,role,scope,branchId,label){
   if(!u.authId&&!u.passHash){toast('This old request is missing login data. Reject it and ask them to request again.','bad');return false;}
-  const fallback=!u.authId;
+  let fallback=!u.authId;
   u.pending=false;u.role=role;u.scope=scope;u.branchId=branchId||u.branchId||'branch_1';u.authRequired=!!u.authId||!!u.authRequired;
   delete u.pendingAt;
-  if(u.authId||u.authRequired){delete u.pass;delete u.passHash;delete u.passSalt;}
   if(USE_SUPABASE&&u.authId){
     const {error}=await sbUpsertStaffMembership(u);
-    if(error){toast('Approval saved locally, but Supabase membership failed','bad');console.warn('Staff membership:',error);}
+    if(error){
+      console.warn('Staff membership:',error);
+      if(u.passHash){u.authRequired=false;fallback=true;toast('Approved with fallback login. Run supabase-security.sql to enable full Supabase Auth.','warn');}
+      else{toast('Supabase membership failed and no fallback login exists. Reject and ask them to request again.','bad');return false;}
+    }else{
+      u.authRequired=true;
+      delete u.pass;delete u.passHash;delete u.passSalt;
+    }
+  }else if(u.authRequired&&!u.authId){
+    u.authRequired=false;
   }
   logAudit('Staff approved',`${u.name} approved as ${u.role} for ${label||scopeLabel(u.scope)}`,u.scope);
   save();
