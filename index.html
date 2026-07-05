@@ -643,6 +643,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     </div>
     <div class="role-pills" id="quickRoles"></div>
     <div class="demo-note" id="demoNote"></div>
+    <div style="text-align:center;margin-top:10px;font-size:10px;color:#b8ad9c" id="verTag"></div>
   </div>
 </div>
 
@@ -743,7 +744,9 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.0.1';
+// Show build version on the login screen so deploys are instantly verifiable.
+document.addEventListener('DOMContentLoaded',()=>{const t=document.getElementById('verTag');if(t)t.textContent='v'+APP_VERSION;});
 const SCHEMA_VERSION=3;
 // Suppress generic "Script error." from Safari/iOS intervals
 window.onerror=(msg)=>{if(msg==='Script error.')return true;};
