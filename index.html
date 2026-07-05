@@ -1584,12 +1584,18 @@ async function doRegister(){
             branch_id:newUser.branchId,
             created_at:new Date(newUser.pendingAt).toISOString()
           };
-          let {error:pendingError}=await client.from('pending_requests').insert(pendingPayload);
-          if(pendingError&&String(pendingError.message||'').toLowerCase().includes('auth_user_id')){
-            const legacyPayload=Object.assign({},pendingPayload);
-            delete legacyPayload.auth_user_id;
-            const retry=await client.from('pending_requests').insert(legacyPayload);
-            pendingError=retry.error;
+          const variants=[pendingPayload];
+          const noAuth=Object.assign({},pendingPayload);delete noAuth.auth_user_id;variants.push(noAuth);
+          const oldPass=Object.assign({},noAuth,{pass:'supabase-auth-account'});delete oldPass.pass_hash;delete oldPass.pass_salt;variants.push(oldPass);
+          const minimal=Object.assign({},oldPass);delete minimal.pass;variants.push(minimal);
+          let pendingError=null;
+          for(const payload of variants){
+            const {error}=await client.from('pending_requests').insert(payload);
+            pendingError=error;
+            if(!error){pendingError=null;break;}
+            const msg=String(error.message||'').toLowerCase();
+            const schemaProblem=msg.includes('could not find')||msg.includes('schema cache')||msg.includes('column')||msg.includes('pass_hash')||msg.includes('auth_user_id')||msg.includes("'pass'");
+            if(!schemaProblem)break;
           }
           if(pendingError)throw pendingError;
           queued=true;
