@@ -375,13 +375,13 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* storage-type pills: compact controls that never stretch to fill the modal */
 .storage-seg{display:flex!important;flex-wrap:wrap!important;align-items:flex-start!important;align-content:flex-start!important;gap:6px;width:100%;height:auto!important;min-height:0!important;font-size:13px}
 .storage-seg .store-pill{display:inline-flex!important;align-items:center!important;justify-content:flex-start!important;flex:0 0 auto!important;width:auto!important;max-width:100%!important;height:34px!important;min-height:34px!important;max-height:34px!important;align-self:flex-start!important;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.storage-seg .store-pill button.main{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;height:32px!important;min-width:0!important;min-height:0!important;max-height:32px!important;white-space:nowrap;text-align:center;line-height:1!important;padding:0 11px!important}
+.storage-seg .store-pill button.store-main{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;height:32px!important;min-width:0!important;min-height:0!important;max-height:32px!important;white-space:nowrap;text-align:center;line-height:1!important;padding:0 11px!important}
 .store-pill .typeRm{align-self:center}
-.store-pill button.main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+.store-pill button.store-main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .store-pill.active{border-color:var(--brass)}
-.store-pill.active button.main{background:var(--brass);color:#fff}
-.store-pill.active.store-type-freezer button.main{background:var(--boh);color:#fff}
-.store-pill.active.store-type-cold button.main{background:#2f6aa5;color:#fff}
+.store-pill.active button.store-main{background:var(--brass);color:#fff}
+.store-pill.active.store-type-freezer button.store-main{background:var(--boh);color:#fff}
+.store-pill.active.store-type-cold button.store-main{background:#2f6aa5;color:#fff}
 .typeRm:hover{background:rgba(184,60,60,.08)}
 .daybtns{display:flex;gap:6px;flex-wrap:wrap}
 .daybtns button{width:42px;padding:8px 0;text-align:center;border:1px solid var(--line);border-radius:9px;font-family:'Avenir Next',sans-serif;font-size:12px;font-weight:600;color:var(--muted);background:#fff}
@@ -748,7 +748,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-const APP_VERSION='1.0.2';
+const APP_VERSION='1.0.3';
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
 // Show build version on the login screen so deploys are instantly verifiable.
@@ -3357,7 +3357,7 @@ function itemModal(scope,existing,startUnused){
     storeTypesFor(scope).forEach(t=>{
       const isActive=store===t.id;
       const pill=el('div','store-pill'+(isActive?' active store-type-'+t.id:''));
-      const main_=el('button','main',t.label);main_.type='button';
+      const main_=el('button','store-main',t.label);main_.type='button';
       pill.style.cssText='display:inline-flex;align-items:center;flex:0 0 auto;width:auto;height:34px;min-height:34px;max-height:34px;align-self:flex-start;overflow:hidden;';
       main_.style.cssText='display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:auto;height:32px;min-height:32px;max-height:32px;line-height:1;padding:0 11px;white-space:nowrap;';
       main_.onclick=()=>{store=t.id;if(tempI.value===''||['‑18','-18','4','3','2','1','0','-1'].includes(tempI.value))tempI.value=defaultTemp(t.id)===''?'':String(defaultTemp(t.id));paintSeg();updateTempVis();};
@@ -7395,7 +7395,7 @@ if('serviceWorker' in navigator){
         // No hosted sw.js (e.g. opened as a single file) — fall back to inline worker.
         try{
           const swCode=`
-            const CACHE='stockline-shell-v4';
+            const CACHE='stockline-shell-v5';
             self.addEventListener('install',e=>{
               self.skipWaiting();
               e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./']).catch(()=>{})));
