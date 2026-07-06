@@ -372,8 +372,10 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .seg button.on.dry{background:#8a6420;border-color:#8a6420;color:#fff}
 .typeRm{border:none;background:none;color:var(--bad);font-size:14px;line-height:1;cursor:pointer;padding:0 3px;margin-left:2px;opacity:.7}
 .typeRm:hover{opacity:1}
-.store-pill{display:inline-flex !important;width:auto !important;max-width:max-content;align-items:center;justify-content:flex-start !important;flex:0 0 auto !important;align-self:flex-start;height:auto;max-height:44px;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:3px}
-.store-pill button.main{width:auto !important;flex:0 0 auto;white-space:nowrap;text-align:center}
+.seg{display:block !important;width:100%;font-size:0}
+.seg > .store-pill{font-size:13px}
+.store-pill{display:inline-block !important;width:auto !important;max-width:max-content !important;vertical-align:top;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:3px}
+.store-pill button.main{display:inline-block;width:auto !important;flex:none;white-space:nowrap;text-align:center}
 .store-pill button.main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .store-pill.active{border-color:var(--brass)}
 .store-pill.active button.main{background:var(--brass);color:#fff}
