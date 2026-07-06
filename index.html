@@ -364,7 +364,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .x{width:34px;height:34px;border-radius:9px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--muted)}
 .frow{display:flex;gap:12px}
 .frow .field{flex:1}
-.seg{display:flex;gap:7px;flex-wrap:wrap}
+.seg{display:flex;gap:7px;flex-wrap:wrap;align-items:flex-start;width:100%}
 .seg button{padding:9px 13px;border:1px solid var(--line);border-radius:9px;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);background:#fff}
 .seg button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .seg button.on.cold{background:#2f6aa5;border-color:#2f6aa5;color:#fff}
@@ -372,7 +372,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .seg button.on.dry{background:#8a6420;border-color:#8a6420;color:#fff}
 .typeRm{border:none;background:none;color:var(--bad);font-size:14px;line-height:1;cursor:pointer;padding:0 3px;margin-left:2px;opacity:.7}
 .typeRm:hover{opacity:1}
-.store-pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:3px}
+.store-pill{display:inline-flex !important;width:auto !important;max-width:max-content;align-items:center;justify-content:flex-start !important;flex:0 0 auto !important;align-self:flex-start;height:auto;max-height:44px;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:3px}
+.store-pill button.main{width:auto !important;flex:0 0 auto;white-space:nowrap;text-align:center}
 .store-pill button.main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .store-pill.active{border-color:var(--brass)}
 .store-pill.active button.main{background:var(--brass);color:#fff}
@@ -7187,7 +7188,7 @@ if('serviceWorker' in navigator){
         // No hosted sw.js (e.g. opened as a single file) — fall back to inline worker.
         try{
           const swCode=`
-            const CACHE='stockline-shell-v1';
+            const CACHE='stockline-shell-v2';
             self.addEventListener('install',e=>{
               self.skipWaiting();
               e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./']).catch(()=>{})));
@@ -7204,15 +7205,14 @@ if('serviceWorker' in navigator){
               if(req.method!=='GET')return;
               const url=new URL(req.url);
               if(url.origin!==location.origin)return;
-              if(req.mode==='navigate'||req.destination==='document'){
-                e.respondWith(
-                  fetch(req).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});return res;})
-                    .catch(()=>caches.match(req).then(r=>r||caches.match('./')))
-                );
-                return;
-              }
+              // Network-first for everything on our origin: always try the network so
+              // fresh deploys load; fall back to cache only when offline.
               e.respondWith(
-                caches.match(req).then(cached=>cached||fetch(req).then(res=>{const copy=res.clone();caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});return res;}).catch(()=>cached))
+                fetch(req).then(res=>{
+                  const copy=res.clone();
+                  caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});
+                  return res;
+                }).catch(()=>caches.match(req).then(r=>r||caches.match('./')))
               );
             });
           `;
