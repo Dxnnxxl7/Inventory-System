@@ -372,10 +372,11 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .seg button.on.dry{background:#8a6420;border-color:#8a6420;color:#fff}
 .typeRm{border:none;background:none;color:var(--bad);font-size:14px;line-height:1;cursor:pointer;padding:0 3px;margin-left:2px;opacity:.7}
 .typeRm:hover{opacity:1}
-.seg{display:block !important;width:100%;font-size:0}
-.seg > .store-pill{font-size:13px}
-.store-pill{display:inline-block !important;width:auto !important;max-width:max-content !important;vertical-align:top;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:3px}
-.store-pill button.main{display:inline-block;width:auto !important;flex:none;white-space:nowrap;text-align:center}
+/* storage-type pills: wrap, sit at natural height (never stretch to fill modal) */
+.seg{display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:6px;width:100%;font-size:13px}
+.store-pill{display:inline-flex;align-items:center;width:auto;max-width:max-content;height:auto;align-self:flex-start;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.store-pill button.main{display:inline-flex;align-items:center;width:auto;height:auto;flex:0 0 auto;white-space:nowrap;text-align:center;line-height:1.2}
+.store-pill .typeRm{align-self:center}
 .store-pill button.main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .store-pill.active{border-color:var(--brass)}
 .store-pill.active button.main{background:var(--brass);color:#fff}
@@ -1335,6 +1336,10 @@ function applyBrand(){
   document.title=bizName+' \u2014 '+branchLabel;
   updateSyncDot();
 }
+function applyPublicTitle(){
+  if(SESSION)return;
+  document.title='Stored';
+}
 function renderQuickRoles(){
   const wrap=$('#quickRoles');wrap.innerHTML='';
   // hide demo pills when Supabase is configured — real owners create their own account
@@ -1386,6 +1391,7 @@ function showLanding(push){
   $('#register').style.display='none';
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
   const land=$('#landing');if(land)land.style.display='block';
+  applyPublicTitle();
   if(push)pushPublicState('landing');
 }
 function showForgotPassword(push=true){
@@ -1394,6 +1400,7 @@ function showForgotPassword(push=true){
   $('#register').style.display='none';
   const fp=$('#forgotPassword');if(fp){fp.style.display='flex';$('#fpMsg').textContent='';}
   const em=$('#fpEmail');if(em){em.value=$('#loginEmail').value||'';em.focus();}
+  applyPublicTitle();
   if(push)pushPublicState('forgot');
 }
 async function doForgotPassword(){
@@ -1419,6 +1426,7 @@ function showRegister(push=true){
   $('#auth').style.display='none';
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
   $('#register').style.display='flex';
+  applyPublicTitle();
   $('#regMsg').textContent='';
   if($('#regName'))$('#regName').value='';
   if($('#regUsername'))$('#regUsername').value='';
@@ -1490,7 +1498,7 @@ function showRegister(push=true){
       }catch(e){console.warn('Branch fetch failed:',e.message||e);}
     }
     const defaultDb=loadEst('default');
-    if(defaultDb){
+    if(defaultDb&&!isStarterDb(defaultDb)){
       let bs=[...(defaultDb.branches||[])];
       if(!bs.find(b=>b.id==='branch_1')){
         bs.unshift({id:'branch_1',label:defaultDb.venue?.name||defaultDb.brand?.appName||'Main Branch',short:'MAIN'});
@@ -1535,6 +1543,7 @@ function showLogin(push=true){
   const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
   $('#auth').style.display='flex';
   $('#authMsg').textContent='';
+  applyPublicTitle();
   if(push)pushPublicState('login');
 }
 window.addEventListener('popstate',e=>{
@@ -1572,13 +1581,21 @@ async function doRegister(){
       if(data&&data.length)existingEsts=data;
     }catch(e){}
   }
-  if(!existingEsts.length){const d=loadEst('default');if(d&&(d.venue?.name||d.brand?.appName))existingEsts.push({id:'default'});}
+  if(!existingEsts.length){
+    const d=loadEst('default');
+    if(d&&!isStarterDb(d)&&(d.venue?.name||d.brand?.appName))existingEsts.push({id:'default'});
+  }
   const existingOwner=existingEsts.length>0;
   if(!existingOwner){
     // No owner yet — this person becomes the owner
     if(!est){$('#regMsg').textContent='Enter your branch name.';$('#regBtn').disabled=false;return;}
     const{data,error}=await sbSignUp(email,pass);
-    if(error&&!error.message.includes('already registered')){$('#regMsg').textContent=error.message;$('#regBtn').disabled=false;return;}
+    if(error){
+      const msg=String(error.message||'');
+      $('#regMsg').textContent=msg.toLowerCase().includes('already registered')?'This email already has an account. Sign in instead.':msg;
+      $('#regBtn').disabled=false;
+      return;
+    }
     const newDb=blankDb(est);
     const bossUser={id:'boss',name,username:email,role:'boss',email,authId:data?.user?.id||SUPABASE_USER?.id||''};
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
@@ -1755,6 +1772,18 @@ function loadEst(id){
     if(r)return JSON.parse(r);
   }catch(e){}
   return null;
+}
+
+function isStarterDb(d){
+  if(!d)return false;
+  const users=Array.isArray(d.users)?d.users:[];
+  const demoUsers=['boss','manager','headchef','foh','boh'];
+  const hasOnlyDemoUsers=users.length===demoUsers.length&&demoUsers.every(id=>users.some(u=>u.id===id&&u.pass));
+  const starterVenue=String(d.venue?.name||'').trim()==='The Copper Table';
+  const starterBrand=String(d.brand?.appName||'').trim()==='StockLine';
+  const starterBranches=Array.isArray(d.branches)&&d.branches.length===1&&d.branches[0].id==='branch_1'&&d.branches[0].label==='Main Branch';
+  const starterSystems=Array.isArray(d.systems)&&d.systems.length===2&&d.systems.some(s=>s.id==='kitchen')&&d.systems.some(s=>s.id==='restaurant');
+  return starterVenue&&starterBrand&&starterBranches&&starterSystems&&hasOnlyDemoUsers;
 }
 
 function saveEst(id,data){
@@ -2292,7 +2321,7 @@ function showLoginGreeting(){
   clearTimeout(gr._t);gr._t=setTimeout(()=>gr.classList.remove('show'),4500);
 }
 
-applyBrand();renderQuickRoles();
+applyBrand();renderQuickRoles();applyPublicTitle();
 
 // Restore session after page refresh
 (()=>{
