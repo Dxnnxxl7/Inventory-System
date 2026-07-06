@@ -372,16 +372,16 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 .seg button.on.dry{background:#8a6420;border-color:#8a6420;color:#fff}
 .typeRm{border:none;background:none;color:var(--bad);font-size:14px;line-height:1;cursor:pointer;padding:0 3px;margin-left:2px;opacity:.7}
 .typeRm:hover{opacity:1}
-/* storage-type pills: wrap, sit at natural height (never stretch to fill modal) */
-.seg{display:flex;flex-wrap:wrap;align-items:flex-start;align-content:flex-start;gap:6px;width:100%;font-size:13px}
-.store-pill{display:inline-flex;align-items:center;width:auto;max-width:max-content;height:auto;align-self:flex-start;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.store-pill button.main{display:inline-flex;align-items:center;width:auto;height:auto;flex:0 0 auto;white-space:nowrap;text-align:center;line-height:1.2}
+/* storage-type pills: compact controls that never stretch to fill the modal */
+.storage-seg{display:flex!important;flex-wrap:wrap!important;align-items:flex-start!important;align-content:flex-start!important;gap:6px;width:100%;height:auto!important;min-height:0!important;font-size:13px}
+.storage-seg .store-pill{display:inline-flex!important;align-items:center!important;justify-content:flex-start!important;flex:0 0 auto!important;width:auto!important;max-width:100%!important;height:34px!important;min-height:34px!important;max-height:34px!important;align-self:flex-start!important;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.storage-seg .store-pill button.main{display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:0 0 auto!important;width:auto!important;height:32px!important;min-width:0!important;min-height:0!important;max-height:32px!important;white-space:nowrap;text-align:center;line-height:1!important;padding:0 11px!important}
 .store-pill .typeRm{align-self:center}
 .store-pill button.main{padding:7px 11px;border:none;background:none;font-family:'Avenir Next',sans-serif;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
 .store-pill.active{border-color:var(--brass)}
 .store-pill.active button.main{background:var(--brass);color:#fff}
-.store-pill.on.freezer{border-color:var(--boh)}.store-pill.active.freezer button.main{background:var(--boh);color:#fff}
-.store-pill.active.cold button.main{background:#2f6aa5;color:#fff}
+.store-pill.active.store-type-freezer button.main{background:var(--boh);color:#fff}
+.store-pill.active.store-type-cold button.main{background:#2f6aa5;color:#fff}
 .typeRm:hover{background:rgba(184,60,60,.08)}
 .daybtns{display:flex;gap:6px;flex-wrap:wrap}
 .daybtns button{width:42px;padding:8px 0;text-align:center;border:1px solid var(--line);border-radius:9px;font-family:'Avenir Next',sans-serif;font-size:12px;font-weight:600;color:var(--muted);background:#fff}
@@ -748,7 +748,9 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-const APP_VERSION='1.0.1';
+const APP_VERSION='1.0.2';
+const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
+const DEMO_DATA_ENABLED=false;
 // Show build version on the login screen so deploys are instantly verifiable.
 document.addEventListener('DOMContentLoaded',()=>{const t=document.getElementById('verTag');if(t)t.textContent='v'+APP_VERSION;});
 const SCHEMA_VERSION=3;
@@ -854,7 +856,38 @@ const tomorrowISO=()=>{const d=new Date();d.setDate(d.getDate()+1);return d.toIS
 const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 /* ---- default seed ---- */
+function cleanSeed(){
+  return {
+    venue:{name:'',address:'',location:'',area:''},
+    brand:{appName:'',logo:'',accent:'#b5862f',dateFormat:'DD/MM/YYYY',timeFormat:'24',kitchenLabel:'',restaurantLabel:'',kitchenShort:'',restaurantShort:''},
+    systems:[],
+    branches:[],
+    users:[],
+    suppliers:[],
+    categories:{},
+    storeTypes:{},
+    items:[],
+    deliveries:[],
+    orders:[],
+    usage:[],
+    notifications:[],
+    pending:[],
+    announcements:[],
+    messages:[],
+    auditLog:[],
+    allergens:{},
+    categoryFood:{},
+    wastage:[],
+    stockHistory:[],
+    cloudBackups:[],
+    support:Object.assign({},SUPPORT_DEFAULTS),
+    compliance:{schedule:{},thresholds:{},actions:[],checkLogs:[]},
+    temperatureLogs:[],
+    tempLogs:[]
+  };
+}
 function seed(){
+  if(!DEMO_DATA_ENABLED)return cleanSeed();
   const sup=(name,cat,scope,cutoff,days,phone,email)=>({id:uid(),name,category:cat,scope,cutoff,days,phone,email:email||''});
   const item=(name,scope,cat,store,unit,qty,par,supId,loc,temp)=>({
     id:uid(),name,scope,category:cat,store,unit,qty,par,supplierId:supId,location:loc,temp:temp??'',
@@ -890,11 +923,11 @@ function seed(){
     systems:[{id:'kitchen',label:'System 1',short:'SYS1',branchId:'branch_1'},{id:'restaurant',label:'System 2',short:'SYS2',branchId:'branch_1'}], // active branch systems
     branches:[{id:'branch_1',label:'Main Branch',short:'MAIN'}],
     users:[
-      {id:'boss',name:'Owner',username:'boss',pass:'boss123',role:'boss'},
-      {id:'mgr',name:'Manager',username:'manager',pass:'manager123',role:'incharge',scope:'restaurant'},
-      {id:'chef',name:'Head Chef',username:'headchef',pass:'headchef123',role:'incharge',scope:'kitchen'},
-      {id:'foh',name:'Front of House',username:'foh',pass:'foh123',role:'staff',scope:'restaurant'},
-      {id:'boh',name:'Back of House',username:'boh',pass:'boh123',role:'staff',scope:'kitchen'},
+      {id:'boss',name:'Owner',username:'boss',pass:'',role:'boss'},
+      {id:'mgr',name:'Manager',username:'manager',pass:'',role:'incharge',scope:'restaurant'},
+      {id:'chef',name:'Head Chef',username:'headchef',pass:'',role:'incharge',scope:'kitchen'},
+      {id:'foh',name:'Front of House',username:'foh',pass:'',role:'staff',scope:'restaurant'},
+      {id:'boh',name:'Back of House',username:'boh',pass:'',role:'staff',scope:'kitchen'},
     ],
     suppliers:[...k_sup,...r_sup],
     categories:{
@@ -918,7 +951,8 @@ function seed(){
     categoryFood:{kitchen:{},restaurant:{}}, // {scope: {catName: true/false}}
     wastage:[], // {id,itemId,itemName,scope,qty,unit,reason,cost,byId,byName,ts}
     stockHistory:[], // {id,itemId,itemName,scope,qty,par,event,ts}
-    cloudBackups:[] // rolling 30-day owner restore history
+    cloudBackups:[], // rolling 30-day owner restore history
+    support:Object.assign({},SUPPORT_DEFAULTS)
   };
 }
 let DB=load();
@@ -955,7 +989,7 @@ function load(){
       if(!d.deliveries)d.deliveries=[];
       if(!d.usage)d.usage=[];
       if(!d.suppliers)d.suppliers=[];
-      if(!d.users||!d.users.length)d.users=[{id:'boss',name:'Owner',username:'boss',pass:'boss123',role:'boss'}];
+      if(!d.users)d.users=[];
       if(!d.categories)d.categories={kitchen:[],restaurant:[]};
       if(!d.pending)d.pending=[];
       if(!d.announcements)d.announcements=[];
@@ -965,6 +999,8 @@ function load(){
       if(!d.wastage)d.wastage=[];
       if(!d.stockHistory)d.stockHistory=[];
       if(!d.cloudBackups)d.cloudBackups=[];
+      if(!d.support)d.support=Object.assign({},SUPPORT_DEFAULTS);
+      else d.support=Object.assign({},SUPPORT_DEFAULTS,d.support);
       if(!d.tempLogs)d.tempLogs=[];
       if(!d.temperatureLogs)d.temperatureLogs=[];
       // Compliance: per-scope schedule of required daily temp checks, plus
@@ -1752,11 +1788,12 @@ function blankDb(name){
     systems:[{id:sys1,label:'System 1',short:'SYS1',branchId:'branch_1',isDefault:true}],
     branches:[{id:'branch_1',label:name,short:(name.slice(0,3)).toUpperCase()}],
     items:[],deliveries:[],usage:[],suppliers:[],temperatureLogs:[],
-    users:[{id:'boss',name:'Owner',username:'boss',pass:'boss123',role:'boss',scope:sys1}],
+    users:[],
     categories:{[sys1]:[]},
     storeTypes:{[sys1]:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}]},
     pending:[],announcements:[],messages:[],auditLog:[],
     compliance:{schedule:{},thresholds:{},actions:[],checkLogs:[]},
+    support:Object.assign({},SUPPORT_DEFAULTS),
     allergens:{},categoryFood:{[sys1]:{}},
     notifications:[],wastage:[],stockHistory:[],temperatureLogs:[]
   };
@@ -1777,6 +1814,8 @@ function loadEst(id){
 function isStarterDb(d){
   if(!d)return false;
   const users=Array.isArray(d.users)?d.users:[];
+  const emptyStarter=!users.length&&!(d.items||[]).length&&!(d.suppliers||[]).length&&!(d.deliveries||[]).length;
+  if(emptyStarter)return true;
   const demoUsers=['boss','manager','headchef','foh','boh'];
   const hasOnlyDemoUsers=users.length===demoUsers.length&&demoUsers.every(id=>users.some(u=>u.id===id&&u.pass));
   const starterVenue=String(d.venue?.name||'').trim()==='The Copper Table';
@@ -2040,13 +2079,15 @@ function migrateLegacy(d){
   if(d.systems)d.systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
   if(!d.storeTypes)d.storeTypes={kitchen:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}],restaurant:[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}]};
   if(!d.items)d.items=[];if(!d.deliveries)d.deliveries=[];if(!d.usage)d.usage=[];
-  if(!d.suppliers)d.suppliers=[];if(!d.users||!d.users.length)d.users=[{id:'boss',name:'Owner',username:'boss',pass:'boss123',role:'boss'}];
+  if(!d.suppliers)d.suppliers=[];if(!d.users)d.users=[];
   if(!d.categories)d.categories={kitchen:[],restaurant:[]};
   if(!d.pending)d.pending=[];if(!d.announcements)d.announcements=[];
   if(!d.messages)d.messages=[];if(!d.auditLog)d.auditLog=[];
   if(!d.allergens)d.allergens={};if(!d.wastage)d.wastage=[];
   if(!d.stockHistory)d.stockHistory=[];if(!d.temperatureLogs)d.temperatureLogs=[];if(!d.categoryFood)d.categoryFood={kitchen:{},restaurant:{}};
   if(!d.notifications)d.notifications=[];
+  if(!d.support)d.support=Object.assign({},SUPPORT_DEFAULTS);
+  else d.support=Object.assign({},SUPPORT_DEFAULTS,d.support);
   if(!d.compliance)d.compliance={schedule:{},thresholds:{},actions:[],checkLogs:[]};
   if(!d.compliance.schedule)d.compliance.schedule={};
   if(!d.compliance.thresholds)d.compliance.thresholds={};
@@ -3306,7 +3347,7 @@ function itemModal(scope,existing,startUnused){
   const tempI=input(d.temp,'°C',''); // temperature
   const expI=input(d.expiry||'','','date');
   // storage segmented — dynamic, in-charge can add/remove custom types
-  const seg=el('div','seg');
+  const seg=el('div','seg storage-seg');
   const segWrap=el('div');
   const newTypeI=input('','New storage type name e.g. Bar fridge');
   const newTypeF=field('New storage type name',newTypeI);newTypeF.style.display='none';
@@ -3315,8 +3356,10 @@ function itemModal(scope,existing,startUnused){
     seg.innerHTML='';
     storeTypesFor(scope).forEach(t=>{
       const isActive=store===t.id;
-      const pill=el('div','store-pill'+(isActive?' active':'')+(isActive?' '+t.id:''));
+      const pill=el('div','store-pill'+(isActive?' active store-type-'+t.id:''));
       const main_=el('button','main',t.label);main_.type='button';
+      pill.style.cssText='display:inline-flex;align-items:center;flex:0 0 auto;width:auto;height:34px;min-height:34px;max-height:34px;align-self:flex-start;overflow:hidden;';
+      main_.style.cssText='display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:auto;height:32px;min-height:32px;max-height:32px;line-height:1;padding:0 11px;white-space:nowrap;';
       main_.onclick=()=>{store=t.id;if(tempI.value===''||['‑18','-18','4','3','2','1','0','-1'].includes(tempI.value))tempI.value=defaultTemp(t.id)===''?'':String(defaultTemp(t.id));paintSeg();updateTempVis();};
       pill.appendChild(main_);
       if(!t.builtin){
@@ -5955,6 +5998,8 @@ function pageSettings(main){
     {id:'account',label:'General',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
     {id:'backups',label:isBoss?'Backups & audit':'Audit log',roles:['boss','incharge']},
+    {id:'support',label:'Support & legal',roles:['boss','incharge','staff']},
+    {id:'launch',label:'Launch checklist',roles:['boss']},
   ].filter(t=>t.roles.includes(SESSION.role));
 
   if(!allTabs.find(t=>t.id===SETTINGS_TAB))SETTINGS_TAB=allTabs[0].id;
@@ -5970,6 +6015,8 @@ function pageSettings(main){
   if(SETTINGS_TAB==='systems'&&(isBoss||isIncharge))settingsSystems(main);
   else if(SETTINGS_TAB==='data')settingsData(main);
   else if(SETTINGS_TAB==='backups'&&(isBoss||isIncharge))settingsBackupsAudit(main);
+  else if(SETTINGS_TAB==='support')settingsSupportLegal(main);
+  else if(SETTINGS_TAB==='launch'&&isBoss)settingsLaunchChecklist(main);
   else settingsAccount(main);
 }
 function settingsVenue(main){
@@ -6690,6 +6737,125 @@ function settingsAccount(main){
   }
 }
 
+function readinessItem(label,ok,detail,actionLabel,actionFn){
+  const row=el('div','list-card');
+  row.style.cssText='display:flex;align-items:flex-start;justify-content:space-between;gap:12px';
+  row.innerHTML=`<div><b>${esc(label)}</b><div class="suptag" style="margin-top:4px;line-height:1.5">${esc(detail)}</div></div><span class="chip ${ok?'ok':'warn'}" style="font-size:11px;flex:none">${ok?'Ready':'Needs work'}</span>`;
+  if(actionLabel&&actionFn){
+    const btn=el('button','btn ghost tiny',actionLabel);
+    btn.onclick=actionFn;
+    btn.style.flex='none';
+    row.appendChild(btn);
+  }
+  return row;
+}
+function hasDemoCredentials(){
+  const demoIds=['boss','mgr','chef','foh','boh'];
+  const demoNames=['boss','manager','headchef','foh','boh'];
+  const demoPasswords=demoNames.map(n=>n+'123');
+  return (DB.users||[]).some(u=>
+    demoIds.includes(u.id)||demoNames.includes(String(u.username||'').toLowerCase())||
+    demoPasswords.includes(String(u.pass||''))
+  );
+}
+function settingsLaunchChecklist(main){
+  const support=Object.assign({},SUPPORT_DEFAULTS,DB.support||{});
+  const systems=DB.systems||[];
+  const branches=DB.branches||[];
+  const cloudLinked=!!(USE_SUPABASE&&SUPABASE_USER);
+  const hasBranch=branches.length>0&&branches.every(b=>String(b.label||'').trim());
+  const hasSystems=systems.length>0&&systems.every(s=>String(s.label||'').trim()&&String(s.branchId||'').trim());
+  const hasCategories=systems.length>0&&systems.every(s=>(DB.categories?.[s.id]||[]).length>0);
+  const hasTeam=(DB.users||[]).some(u=>u.role==='boss'&&u.email)&&!(DB.users||[]).some(u=>u.pending);
+  const hasSupport=!!String(support.email||support.phone||support.website).trim();
+  const hasLegal=!!String(support.privacyUrl||support.termsUrl).trim();
+  const hasBackup=(DB.cloudBackups||[]).length>0;
+  const demoClear=!hasDemoCredentials();
+  const checklist=[
+    ['Cloud sync linked',cloudLinked,cloudLinked?'Owner is signed in with a cloud account.':'Sign in as the owner with Supabase so customer data syncs safely.','Open account',()=>{SETTINGS_TAB='account';render();}],
+    ['No demo credentials',demoClear,demoClear?'No obvious demo usernames/passwords are present.':'Remove demo users and any old sample passwords before selling.','Open team',()=>{SETTINGS_TAB='systems';render();}],
+    ['Branches and systems named',hasBranch&&hasSystems,hasBranch&&hasSystems?'Every branch and system has a business-facing name.':'Set real branch/system names so customers do not see placeholders.','Open branches',()=>{SETTINGS_TAB='systems';render();}],
+    ['Categories configured',hasCategories,hasCategories?'Each system has at least one category.':'Add practical stock categories for each system before onboarding a customer.','Open branches',()=>{SETTINGS_TAB='systems';render();}],
+    ['Staff access clean',hasTeam,hasTeam?'Owner email is saved and there are no pending join requests.':'Approve/reject pending users and make sure the owner email is saved.','Open team',()=>{SETTINGS_TAB='systems';render();}],
+    ['Backup history exists',hasBackup,hasBackup?'At least one backup exists.':'Create a backup before handing the app to a customer.','Backups',()=>{SETTINGS_TAB='backups';render();}],
+    ['Support contact set',hasSupport,hasSupport?'Customers can see how to contact support.':'Add a support email, phone, or website.','Support',()=>{SETTINGS_TAB='support';render();}],
+    ['Legal links set',hasLegal,hasLegal?'Privacy/terms links are available in-app.':'Add privacy policy and terms URLs before charging customers.','Support',()=>{SETTINGS_TAB='support';render();}],
+  ];
+  const ready=checklist.filter(x=>x[1]).length;
+  const card=el('div','card pad');
+  card.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+    <div><b>Sell-readiness checklist</b><div class="suptag" style="margin-top:6px;line-height:1.6">Use this before giving the app to a paying customer. It checks the app-side pieces; Supabase RLS and billing still need to be configured in their own dashboards.</div></div>
+    <span class="chip ${ready===checklist.length?'ok':'warn'}" style="font-size:11px">${ready}/${checklist.length} ready</span>
+  </div>`;
+  checklist.forEach(row=>card.appendChild(readinessItem(...row)));
+  main.appendChild(card);
+
+  const external=el('div','card pad');external.style.marginTop='14px';
+  external.innerHTML=`<b>External setup still required</b>
+    <div class="suptag" style="margin-top:8px;line-height:1.7">
+      Run <b>supabase-security.sql</b> in Supabase SQL Editor, test with two separate businesses, and connect Stripe or another billing provider before public sale.
+    </div>`;
+  main.appendChild(external);
+}
+function settingsSupportLegal(main){
+  const support=DB.support=Object.assign({},SUPPORT_DEFAULTS,DB.support||{});
+  const isBoss=SESSION.role==='boss';
+  const card=el('div','card pad');
+  card.innerHTML='<b>Support</b><div class="suptag" style="margin-top:6px;line-height:1.6">These details are visible to staff and should point to whoever handles customer support.</div>';
+  if(isBoss){
+    const emailI=input(support.email,'support@example.com','email');
+    const phoneI=input(support.phone,'Phone number');
+    const webI=input(support.website,'https://example.com/help');
+    card.appendChild(field('Support email',emailI));
+    card.appendChild(field('Support phone',phoneI));
+    card.appendChild(field('Support website',webI));
+    const err=el('div','err');card.appendChild(err);
+    const saveBtn=el('button','btn brass','Save support details');
+    saveBtn.onclick=()=>{
+      support.email=emailI.value.trim();
+      support.phone=phoneI.value.trim();
+      support.website=webI.value.trim();
+      save();err.textContent='';toast('Support details saved','good');render();
+    };
+    card.appendChild(saveBtn);
+  }else{
+    card.innerHTML+=`<div class="list-card" style="margin-top:12px"><b>${esc(support.email||'No support email set')}</b><div class="suptag">${esc(support.phone||'No phone set')}${support.website?' · '+esc(support.website):''}</div></div>`;
+  }
+  main.appendChild(card);
+
+  const legal=el('div','card pad');legal.style.marginTop='14px';
+  legal.innerHTML='<b>Legal</b><div class="suptag" style="margin-top:6px;line-height:1.6">Add real policy links before charging customers. The built-in summaries are placeholders only.</div>';
+  if(isBoss){
+    const privacyI=input(support.privacyUrl,'https://example.com/privacy');
+    const termsI=input(support.termsUrl,'https://example.com/terms');
+    legal.appendChild(field('Privacy policy URL',privacyI));
+    legal.appendChild(field('Terms URL',termsI));
+    const saveLegal=el('button','btn brass','Save legal links');
+    saveLegal.onclick=()=>{support.privacyUrl=privacyI.value.trim();support.termsUrl=termsI.value.trim();save();toast('Legal links saved','good');render();};
+    legal.appendChild(saveLegal);
+  }
+  const actions=el('div','row-actions');actions.style.cssText='margin-top:12px;justify-content:flex-start;flex-wrap:wrap';
+  const privacy=el('button','btn ghost sm','Privacy summary');privacy.onclick=()=>legalSummaryModal('Privacy summary');
+  const terms=el('button','btn ghost sm','Terms summary');terms.onclick=()=>legalSummaryModal('Terms summary');
+  actions.appendChild(privacy);actions.appendChild(terms);
+  if(support.privacyUrl){
+    const p=el('button','btn ghost sm','Open privacy link');p.onclick=()=>window.open(support.privacyUrl,'_blank','noopener');actions.appendChild(p);
+  }
+  if(support.termsUrl){
+    const t=el('button','btn ghost sm','Open terms link');t.onclick=()=>window.open(support.termsUrl,'_blank','noopener');actions.appendChild(t);
+  }
+  legal.appendChild(actions);main.appendChild(legal);
+}
+function legalSummaryModal(title){
+  const body=el('div');
+  body.innerHTML=`<div class="suptag" style="line-height:1.7">
+    Placeholder only. Before selling, publish lawyer-reviewed terms and privacy policy that explain account data, staff details, stock records, food-safety logs, cloud storage, support access, subscriptions, cancellation, and data export/deletion.
+  </div>`;
+  const foot=el('div');foot.style.width='100%';
+  const ok=el('button','btn brass','Done');ok.style.width='100%';ok.onclick=closeModal;foot.appendChild(ok);
+  openModal(title,body,foot);
+}
+
 /* ---- Data ---- */
 function settingsData(main){
   const ver=el('div','card pad');ver.style.marginBottom='14px';
@@ -6750,9 +6916,6 @@ function settingsData(main){
       openModal('Restore snapshot',body,foot);
     };
     dz.appendChild(snapBtn);
-    const reset=el('button','btn ghost sm','Reset to demo data');reset.style.marginTop='8px';reset.style.display='block';
-    reset.onclick=()=>confirmModal('Reset everything?','All data will be replaced with demo data. A safety snapshot is saved first.',()=>{autoSnapshot('before-reset');DB=seed();logAudit('Data reset','Reset to demo data',SCOPE);save();buildNav();applyBrand();render();toast('Reset to demo');});
-    dz.appendChild(reset);
     const cleanupBtn=el('button','btn ghost sm','Clean up old systems');cleanupBtn.style.marginTop='8px';cleanupBtn.style.display='block';
     cleanupBtn.onclick=()=>{
       // Find systems with default IDs (kitchen/restaurant) or no custom branchId setup
@@ -7212,14 +7375,27 @@ setInterval(()=>{checkPendingRequests();},30*1000);
    Fallback: an inline Blob service worker, so a single-file deployment with no
    sw.js still gets offline shell caching where the browser allows it.
    Either way, all user data already persists in localStorage on every save(). */
+function checkAppVersionUpgrade(){
+  try{
+    const key='stored_app_version';
+    const prev=localStorage.getItem(key);
+    if(prev&&prev!==APP_VERSION&&window.caches){
+      caches.keys().then(keys=>Promise.all(keys.filter(k=>k.indexOf('stockline-shell-')===0).map(k=>caches.delete(k))))
+        .then(()=>toast('Stored updated to v'+APP_VERSION,'good'))
+        .catch(()=>{});
+    }
+    localStorage.setItem(key,APP_VERSION);
+  }catch(e){}
+}
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
+    checkAppVersionUpgrade();
     navigator.serviceWorker.register('sw.js')
       .catch(()=>{
         // No hosted sw.js (e.g. opened as a single file) — fall back to inline worker.
         try{
           const swCode=`
-            const CACHE='stockline-shell-v2';
+            const CACHE='stockline-shell-v4';
             self.addEventListener('install',e=>{
               self.skipWaiting();
               e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./']).catch(()=>{})));
