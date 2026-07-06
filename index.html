@@ -748,7 +748,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-const APP_VERSION='1.0.3';
+window.APP_VERSION='1.0.5';
+const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
 // Show build version on the login screen so deploys are instantly verifiable.
@@ -1094,7 +1095,14 @@ function retryCloudSaveSoon(reason){
 }
 function save(){
   createDailyCloudBackup('daily');
-  localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+  try{
+    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+  }catch(e){
+    // localStorage full or unavailable (e.g. private mode / quota exceeded).
+    // Don't let a persistence failure crash the in-progress action.
+    console.error('Local save failed:',e);
+    try{toast('Could not save to this device — storage may be full. Export a backup to be safe.','bad');}catch(_){}
+  }
   if(USE_SUPABASE&&SUPABASE_USER){
     if(navigator.onLine===false){
       setSyncHealth({lastSyncFailAt:new Date().toISOString(),lastSyncFailReason:'Working offline'});
@@ -1583,7 +1591,19 @@ function showLogin(push=true){
   if(push)pushPublicState('login');
 }
 window.addEventListener('popstate',e=>{
-  if(SESSION)return;
+  if(SESSION){
+    const page=(e.state&&e.state.appPage)||location.hash.replace('#','');
+    if(appPageAllowed(page)){
+      if(CURRENT!=='messages'||page!=='messages')MSG_THREAD=null;
+      CURRENT=page;
+      closeNav();
+      buildNav();
+      render();
+    }else{
+      goPage('today');
+    }
+    return;
+  }
   const view=(e.state&&e.state.publicView)||location.hash.replace('#','')||'landing';
   if(view==='login')showLogin(false);
   else if(view==='register')showRegister(false);
@@ -2378,6 +2398,8 @@ applyBrand();renderQuickRoles();applyPublicTitle();
         const systems=DB.systems||[];
         SCOPE=user.role==='boss'?(systems[0]?.id||'kitchen'):(user.scope||'kitchen');
         applySavedSessionState(sess);
+        const hashPage=location.hash.replace('#','');
+        if(appPageAllowed(hashPage))CURRENT=hashPage;
         applyBrand();
         const land=$('#landing');if(land)land.style.display='none';
         $('#register').style.display='none';
@@ -2434,6 +2456,38 @@ function navConfig(){
     {id:'temps',ic:'🌡️',label:'Temp log'},
     {id:'compliance',ic:'✅',label:'Compliance'},
     {id:'history',ic:'📚',label:'History'}]};
+}
+function appPageAllowed(page){
+  if(!SESSION||!page)return false;
+  const cfg=navConfig();
+  const pages=[
+    ...(cfg.main||[]).map(it=>it.id),
+    ...(cfg.admin||[]).map(it=>it.id),
+    'announce',
+    'messages'
+  ];
+  if(SESSION.role==='boss'||SESSION.role==='incharge')pages.push('cats');
+  return pages.includes(page);
+}
+function syncAppHash(mode='replace'){
+  if(!SESSION||!appPageAllowed(CURRENT))return;
+  const clean=location.href.split('#')[0];
+  const target=clean+'#'+CURRENT;
+  if(location.href===target)return;
+  try{
+    const state={...(history.state||{}),appPage:CURRENT};
+    if(mode==='push')history.pushState(state,'',target);
+    else history.replaceState(state,'',target);
+  }catch(e){}
+}
+function goPage(page,opts={}){
+  const next=appPageAllowed(page)?page:'today';
+  if(CURRENT!=='messages'||next!=='messages')MSG_THREAD=null;
+  CURRENT=next;
+  syncAppHash(opts.push?'push':'replace');
+  closeNav();
+  buildNav();
+  render();
 }
 function pendingCountFor(scope){return DB.pending.filter(p=>p.scope===scope).length;}
 function activeItems(scope){return DB.items.filter(i=>i.scope===scope&&!i.unused);}
@@ -2536,7 +2590,7 @@ function buildNav(){
       const um=(DB.messages||[]).filter(m=>m.toId===SESSION.id&&!(m.readBy||[]).includes(SESSION.id)).length;
       if(um)a.innerHTML+=`<span class="nbadge">${um}</span>`;
     }
-    a.onclick=()=>{if(CURRENT!=='messages'||it.id!=='messages')MSG_THREAD=null;CURRENT=it.id;closeNav();buildNav();render();};
+    a.onclick=()=>goPage(it.id,{push:true});
     return a;
   };
   cfg.main.forEach(it=>sb.appendChild(mkItem(it)));
@@ -2613,8 +2667,8 @@ function renderBell(){
   const um=(DB.messages||[]).filter(m=>m.toId===SESSION.id&&!(m.readBy||[]).includes(SESSION.id)).length;
   $('#messagesDot').classList.toggle('hidden',um===0);
 }
-$('#announceBtn').onclick=()=>{MSG_THREAD=null;CURRENT='announce';closeNav();buildNav();render();};
-$('#messagesBtn').onclick=()=>{MSG_THREAD=null;CURRENT='messages';closeNav();buildNav();render();};
+$('#announceBtn').onclick=()=>goPage('announce',{push:true});
+$('#messagesBtn').onclick=()=>goPage('messages',{push:true});
 $('#bellBtn').onclick=()=>{
   const p=$('#notifPanel');
   if(p.classList.contains('show')){p.classList.remove('show');return;}
@@ -2695,7 +2749,7 @@ function navigateFromNotif(n){
     else if(dest.page==='deliveries')DELIV_SUBTAB=dest.subtab;
   }
   HIGHLIGHT_ITEM=extractItemFromNotif(n.text);
-  CURRENT=dest.page;buildNav();render();
+  goPage(dest.page,{push:true});
   // Give browser time to paint fully, then scroll
   setTimeout(()=>{
     const h=document.querySelector('[data-highlight="1"]')||document.querySelector('tr.row-highlight');
@@ -2795,12 +2849,14 @@ function render(){
   // Keep topbar in sync with current branch
   applyBrand();
   const main=$('#main');main.scrollTop=0;window.scrollTo(0,0);
-  saveSessionState();
   const routes={
     today:pageToday,stocks:pageStocks,deliveries:pageDeliveries,order:pageOrder,temps:pageTemps,compliance:pageCompliance,
-    usage:pageUsage,temps:pageTemps,compliance:pageCompliance,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
+    usage:pageUsage,announce:pageAnnounce,messages:pageMessages,history:pageHistory,
     cats:pageCats,settings:pageSettings
   };
+  if(!routes[CURRENT]||!appPageAllowed(CURRENT))CURRENT='today';
+  saveSessionState();
+  syncAppHash();
   main.innerHTML='';
   (routes[CURRENT]||pageToday)(main);
 }
@@ -2918,7 +2974,7 @@ function goToday(dest){
     if(dest.page==='order')ORDER_SUBTAB=dest.subtab;
     if(dest.page==='deliveries')DELIV_SUBTAB=dest.subtab;
   }
-  CURRENT=dest.page;buildNav();render();
+  goPage(dest.page,{push:true});
 }
 function todayActions(){
   const scopes=todayScopes().map(s=>s.id);
@@ -3027,7 +3083,7 @@ function scopeSummaryCard(scope,hideLink){
     t.onclick=()=>{
       if(s.scope)SCOPE=s.scope;
       if(s.subtab){if(s.dest==='stocks')STOCKS_SUBTAB=s.subtab;else if(s.dest==='order')ORDER_SUBTAB=s.subtab;}
-      CURRENT=s.dest;buildNav();render();
+      goPage(s.dest,{push:true});
     };
     statRow.appendChild(t);
   });
@@ -3049,7 +3105,7 @@ function scopeSummaryCard(scope,hideLink){
 
   if(SESSION.role==='boss'&&!hideLink){
     const b=el('button','btn ghost sm','Open '+scopeLabel(scope)+' stocks');b.style.marginTop='10px';
-    b.onclick=()=>{SCOPE=scope;CURRENT='stocks';buildNav();render();};card.appendChild(b);
+    b.onclick=()=>{SCOPE=scope;goPage('stocks',{push:true});};card.appendChild(b);
   }
   return card;
 }
@@ -3447,6 +3503,7 @@ function itemModal(scope,existing,startUnused){
       if(!DB.categories[scope].includes(category))DB.categories[scope].push(category);
     }
     if((store==='freezer'||store==='cold')&&String(tempI.value).trim()===''){errEl.textContent='Temperature is required for this storage type. It won’t save until this is filled.';return;}
+    if((store==='freezer'||store==='cold')&&!Number.isFinite(+tempI.value)){errEl.textContent='Enter a valid number for temperature.';return;}
     if(!expI.value){errEl.textContent='Expiration date is required. It won’t save until this is filled.';return;}
     const newQty=+qtyI.value||0;
     const rec={
@@ -3618,7 +3675,7 @@ function pageDeliveries(main){
 
   // sticky bar
   const bar=el('div','sticky-bar');
-  scopeTabs(bar,()=>{DELIV_SUBTAB='deliveries';render();});
+  scopeTabs(bar,()=>{DELIV_CAT_FILTER='';render();});
   const subs=[{id:'deliveries',label:'Deliveries'},{id:'suppliers',label:'Suppliers'},{id:'categories',label:'Categories'}];
   const tabs=el('div','seg no-filter');tabs.style.marginBottom='8px';
   subs.forEach(s=>{const b=el('button',DELIV_SUBTAB===s.id?'on':'',s.label);b.onclick=()=>{DELIV_SUBTAB=s.id;render();};tabs.appendChild(b);});
@@ -3626,7 +3683,7 @@ function pageDeliveries(main){
   main.appendChild(bar);
 
   if(DELIV_SUBTAB==='suppliers'){pageSuppliers(main,true);return;}
-  if(DELIV_SUBTAB==='categories'){pageCats(main);return;}
+  if(DELIV_SUBTAB==='categories'){pageCats(main,{embedded:true,scope});return;}
 
   renderAwaitingSection(main,scope);
 
@@ -4081,7 +4138,7 @@ function deliveryModal(scope){
     const tempI=input(line.temp,'\u00b0C','number');
     const tempHint=el('div','hint');
     function paintHint(){
-      if(line.store==='freezer')tempHint.textContent='Required \u2014 must be \u221215\u00b0C or below.';
+      if(line.store==='freezer')tempHint.textContent='Required \u2014 must be \u221218\u00b0C or below.';
       else if(line.store==='cold')tempHint.textContent='Required — must be below 5°C.';
       else tempHint.textContent='';
     }
@@ -4169,7 +4226,7 @@ function deliveryModal(scope){
       if(r.isNew){
         if((r.store==='freezer'||r.store==='cold')&&String(r.temp).trim()===''){err.textContent='Temperature is required for this storage type — it won’t save while blank.';return;}
         const tempVal=+r.temp;
-        if(r.store==='freezer'&&tempVal>-15){warnModal('Temperature out of range',`New freezer item must be −15°C or below.\n\nYou logged: ${r.temp}°C\n\nMove to designated freezer storage immediately, then correct the temperature before saving.`);return;}
+        if(r.store==='freezer'&&tempVal>-18){warnModal('Temperature out of range',`New freezer item must be −18°C or below.\n\nYou logged: ${r.temp}°C\n\nMove to designated freezer storage immediately, then correct the temperature before saving.`);return;}
         if(r.store==='cold'&&tempVal>=5){warnModal('Temperature out of range',`New cool room item must be below 5°C (currently ${r.temp}°C).\n\nMove to designated cold storage immediately, then correct the temperature before saving.`);return;}
         if(!r.newName){err.textContent='Give the new item a name.';return;}
         if(!r.category){err.textContent='Give the new item a category.';return;}
@@ -4182,8 +4239,8 @@ function deliveryModal(scope){
         const delivTemp=delivStore!=='dry'?String(r.temp).trim():'';
         if((delivStore==='freezer'||delivStore==='cold')&&delivTemp===''){err.textContent=`Temperature is required for ${it.name} — it won't save while blank.`;return;}
         const tempVal=delivTemp!==''?+delivTemp:null;
-        if(delivStore==='freezer'&&tempVal!==null&&tempVal>-15){
-          warnModal('Temperature out of range',`${it.name} is going into the freezer — must be \u221215\u00b0C or below.\n\nYou logged: ${delivTemp}\u00b0C\n\nMove to designated freezer storage immediately, then correct the temperature before saving.`);
+        if(delivStore==='freezer'&&tempVal!==null&&tempVal>-18){
+          warnModal('Temperature out of range',`${it.name} is going into the freezer — must be \u221218\u00b0C or below.\n\nYou logged: ${delivTemp}\u00b0C\n\nMove to designated freezer storage immediately, then correct the temperature before saving.`);
           return;
         }
         if(delivStore==='cold'&&tempVal!==null&&tempVal>=5){
@@ -4528,7 +4585,16 @@ function renderOrderDraftPDF(scope,mode,note,deliveryDate,message){
 
 /* ---------- DAILY USAGE ---------- */
 function deleteUsage(u){
-  if(u.itemId){const it=itemById(u.itemId);if(it)it.qty+=(+u.qty||0);}
+  if(u.itemId){
+    const it=itemById(u.itemId);
+    if(it){
+      const q=+u.qty||0;
+      it.qty+=q;
+      // Restore the batch too, so sum(batches) stays in sync with it.qty.
+      // Usage records store the expiry of the batch they were drawn from.
+      if(q>0&&u.expiry)addBatch(it,q,u.expiry,u.ts||now());
+    }
+  }
   DB.usage=DB.usage.filter(x=>x.id!==u.id);
   save();buildNav();render();toast('Entry deleted · stock restored','good');
 }
@@ -5518,7 +5584,7 @@ function pageCompliance(main){
   const logBtn=el('button','btn brass sm',todayLog?'Edit today checklist':'+ Complete checklist');
   logBtn.onclick=()=>complianceChecklistModal(scope,todayLog);
   actions.appendChild(logBtn);
-  const tempBtn=el('button','btn ghost sm','Open temp log');tempBtn.onclick=()=>{CURRENT='temps';render();};
+  const tempBtn=el('button','btn ghost sm','Open temp log');tempBtn.onclick=()=>goPage('temps',{push:true});
   actions.appendChild(tempBtn);
   const reportBtn=el('button','btn ghost sm','Export compliance PDF');reportBtn.onclick=()=>complianceReportModal(scope);
   actions.appendChild(reportBtn);
@@ -5672,7 +5738,7 @@ function pageTemps(main){
     todayLogs.forEach(l=>{Object.entries(l.readings||{}).forEach(([id,r])=>{if(!latest[id])latest[id]=r;});});
     const grid=el('div');grid.style.cssText='display:flex;gap:10px;flex-wrap:wrap';
     Object.entries(latest).forEach(([id,r])=>{
-      const ok=(id==='freezer'&&r.temp<=-15)||(id==='cold'&&r.temp>=0&&r.temp<=5);
+      const ok=(id==='freezer'&&r.temp<=-18)||(id==='cold'&&r.temp>=0&&r.temp<=5);
       const chip=el('div','card pad');chip.style.cssText='min-width:120px;text-align:center;border:2px solid '+(ok?'var(--sage)':'var(--bad)');
       chip.innerHTML=`<div class="suptag" style="margin-bottom:4px">${esc(r.label)}</div><b style="font-size:22px;color:${ok?'var(--sage)':'var(--bad)'}">${r.temp}°C</b><div style="font-size:11px;margin-top:2px">${ok?'✅ OK':'⚠️ Check'}</div>`;
       grid.appendChild(chip);
@@ -5699,7 +5765,7 @@ function pageTemps(main){
       tr.innerHTML=`<td style="white-space:nowrap">${dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short'})} ${dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</td>`;
       allStoreIds.forEach(id=>{
         const r=l.readings?.[id];
-        if(r){const ok=(id==='freezer'&&r.temp<=-15)||(id==='cold'&&r.temp>=0&&r.temp<=5);tr.innerHTML+=`<td style="color:${ok?'var(--sage)':'var(--bad)'}"><b>${r.temp}°C</b></td>`;}
+        if(r){const ok=(id==='freezer'&&r.temp<=-18)||(id==='cold'&&r.temp>=0&&r.temp<=5);tr.innerHTML+=`<td style="color:${ok?'var(--sage)':'var(--bad)'}"><b>${r.temp}°C</b></td>`;}
         else tr.innerHTML+='<td style="color:var(--muted)">—</td>';
       });
       tr.innerHTML+=`<td class="suptag">${esc(l.byName||'')}</td><td class="suptag">${esc(l.note||'')}</td>`;
@@ -5717,18 +5783,20 @@ function pageTemps(main){
 }
 
 /* ---------- CATEGORIES (boss) ---------- */
-function pageCats(main){
+function pageCats(main,opts={}){
+  const embedded=!!opts.embedded;
+  const fixedScope=opts.scope||'';
   const isBoss=SESSION.role==='boss';
   const eyebrow=isBoss?'Owner controls':'In-charge controls';
   const sub=isBoss?'Edit or remove the category types used in each system.':'Edit or remove the categories in your system.';
-  main.appendChild(headEl(eyebrow,'Categories',sub));
+  if(!embedded)main.appendChild(headEl(eyebrow,'Categories',sub));
 
   // build sub-tabs — boss sees both systems, in-charge sees only their own
-  const scopes=visibleSystems().map(s=>s.id);
+  const scopes=fixedScope?[fixedScope]:visibleSystems().map(s=>s.id);
   // ensure CATS_TAB is valid for this role
-  if(!scopes.includes(CATS_TAB))CATS_TAB=scopes[0];
+  if(!scopes.includes(CATS_TAB))CATS_TAB=fixedScope||scopes[0];
 
-  if(scopes.length>1){
+  if(!fixedScope&&scopes.length>1){
     const tabRow=el('div','scope-tabs no-filter');
     scopes.forEach(sc=>{
       const b=el('button',CATS_TAB===sc?'on':'',scopeLabel(sc));
@@ -5738,7 +5806,7 @@ function pageCats(main){
     main.appendChild(tabRow);
   }
 
-  const scope=CATS_TAB;
+  const scope=fixedScope||CATS_TAB;
   const c=el('div','card pad');
   const hdr=el('div','flex-between');hdr.style.marginBottom='12px';
   hdr.innerHTML=`<h3 style="font-size:17px">${scopeLabel(scope)} categories</h3>`;
@@ -7391,43 +7459,7 @@ if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
     checkAppVersionUpgrade();
     navigator.serviceWorker.register('sw.js')
-      .catch(()=>{
-        // No hosted sw.js (e.g. opened as a single file) — fall back to inline worker.
-        try{
-          const swCode=`
-            const CACHE='stockline-shell-v5';
-            self.addEventListener('install',e=>{
-              self.skipWaiting();
-              e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./']).catch(()=>{})));
-            });
-            self.addEventListener('activate',e=>{
-              e.waitUntil((async()=>{
-                const keys=await caches.keys();
-                await Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)));
-                await self.clients.claim();
-              })());
-            });
-            self.addEventListener('fetch',e=>{
-              const req=e.request;
-              if(req.method!=='GET')return;
-              const url=new URL(req.url);
-              if(url.origin!==location.origin)return;
-              // Network-first for everything on our origin: always try the network so
-              // fresh deploys load; fall back to cache only when offline.
-              e.respondWith(
-                fetch(req).then(res=>{
-                  const copy=res.clone();
-                  caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});
-                  return res;
-                }).catch(()=>caches.match(req).then(r=>r||caches.match('./')))
-              );
-            });
-          `;
-          const blob=new Blob([swCode],{type:'text/javascript'});
-          navigator.serviceWorker.register(URL.createObjectURL(blob))
-            .catch(e=>console.warn('Inline SW registration failed:',e));
-        }catch(e){console.warn('SW inline setup failed:',e);}
-      });
+      .catch(e=>console.warn('Service worker registration failed:',e));
   });
 }
 // Re-sync to Supabase when connection returns
