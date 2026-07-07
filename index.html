@@ -661,6 +661,13 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       </div>
     </div>
     <p class="auth-sub" id="regSub">Create your account to get started.</p>
+    <div class="field" id="regModeField" style="display:none">
+      <label>Account type</label>
+      <div class="seg" style="width:100%">
+        <button type="button" id="regModeCreate" class="on" style="flex:1">Create new business</button>
+        <button type="button" id="regModeJoin" style="flex:1">Join existing branch</button>
+      </div>
+    </div>
     <div class="field">
       <label>Your name</label>
       <div class="inwrap"><input id="regName" placeholder="e.g. Daniel" autocomplete="name"></div>
@@ -1464,6 +1471,35 @@ async function doForgotPassword(){
 }
 const fpBtn=$('#fpBtn');if(fpBtn)fpBtn.onclick=doForgotPassword;
 const fpEmail=$('#fpEmail');if(fpEmail)fpEmail.addEventListener('keydown',e=>{if(e.key==='Enter')doForgotPassword();});
+let REGISTER_MODE='create';
+let REGISTER_BRANCHES=[];
+function setRegisterMode(mode){
+  REGISTER_MODE=mode==='join'?'join':'create';
+  const createBtn=$('#regModeCreate'),joinBtn=$('#regModeJoin');
+  if(createBtn)createBtn.classList.toggle('on',REGISTER_MODE==='create');
+  if(joinBtn)joinBtn.classList.toggle('on',REGISTER_MODE==='join');
+  const estF=$('#regEstField'),estCF=$('#regEstCodeField'),usernameF=$('#regUsernameField');
+  const sub=$('#regSub'),btn=$('#regBtn'),sel=$('#regEstCode');
+  if(REGISTER_MODE==='join'){
+    if(estF)estF.style.display='none';
+    if(estCF)estCF.style.display='block';
+    if(usernameF)usernameF.style.display='block';
+    if(sub)sub.textContent='Select the branch you were invited to join.';
+    if(btn)btn.textContent='Request to join';
+    if(sel&&!REGISTER_BRANCHES.length){
+      sel.disabled=true;
+      sel.innerHTML='<option value="">No branches available yet</option>';
+    }else if(sel){
+      sel.disabled=false;
+    }
+  }else{
+    if(estF)estF.style.display='block';
+    if(estCF)estCF.style.display='none';
+    if(usernameF)usernameF.style.display='none';
+    if(sub)sub.textContent='Create a separate owner account and business workspace.';
+    if(btn)btn.textContent='Create account';
+  }
+}
 function showRegister(push=true){
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';
@@ -1477,18 +1513,23 @@ function showRegister(push=true){
   if($('#regPass'))$('#regPass').value='';
   if($('#regEst'))$('#regEst').value='';
 
-  // Always load branches from Supabase — determines create vs join mode
+  REGISTER_MODE='create';
+  REGISTER_BRANCHES=[];
+  const modeField=$('#regModeField');
+  if(modeField)modeField.style.display='none';
+  const createModeBtn=$('#regModeCreate'),joinModeBtn=$('#regModeJoin');
+  if(createModeBtn)createModeBtn.onclick=()=>setRegisterMode('create');
+  if(joinModeBtn)joinModeBtn.onclick=()=>setRegisterMode('join');
+
+  // Always load branches from Supabase so users can choose create vs join.
   const sel=$('#regEstCode');
   const estF=$('#regEstField');
   const estCF=$('#regEstCodeField');
   const sub=$('#regSub');
   const btn=$('#regBtn');
 
-  // Start with the branch selector visible so the form does not feel delayed.
-  if(estF)estF.style.display='none';
-  if(estCF)estCF.style.display='block';
   const usernameF=$('#regUsernameField');
-  if(usernameF)usernameF.style.display='block';
+  setRegisterMode('create');
   if(sel){
     sel.disabled=true;
     sel.innerHTML='<option value="">Loading branches\u2026</option>';
@@ -1555,18 +1596,14 @@ function showRegister(push=true){
       });
     }
 
-    const hasOwner=allBranches.length>0;
-    if(estF)estF.style.display=hasOwner?'none':'block';
-    if(estCF)estCF.style.display=hasOwner?'block':'none';
-    // Show username field for staff (owner uses email as username)
-    if(usernameF)usernameF.style.display=hasOwner?'block':'none';
-    if(sub)sub.textContent=hasOwner?'Select your branch to request access.':'Create your owner account to get started.';
-    if(btn)btn.textContent=hasOwner?'Request to join':'Create account';
+    REGISTER_BRANCHES=allBranches;
+    const hasBranches=REGISTER_BRANCHES.length>0;
+    if(modeField)modeField.style.display=hasBranches?'block':'none';
 
-    if(sel&&hasOwner){
+    if(sel&&hasBranches){
       sel.disabled=false;
       sel.innerHTML='<option value="">Select branch\u2026</option>';
-      allBranches.forEach(b=>{
+      REGISTER_BRANCHES.forEach(b=>{
         const opt=document.createElement('option');
         opt.value=JSON.stringify({estId:b.estId,branchId:b.branchId,systemIds:b.systemIds});
         opt.textContent=b.label;
@@ -1576,6 +1613,7 @@ function showRegister(push=true){
       sel.disabled=false;
       sel.innerHTML='<option value="">No branch yet</option>';
     }
+    setRegisterMode('create');
   });
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
   if(push)pushPublicState('register');
@@ -1627,7 +1665,8 @@ async function doRegister(){
   $('#regMsg').textContent='Creating your account\u2026';
   $('#regBtn').disabled=true;
   await loadSupabaseSDK();
-  // Check Supabase for existing establishments — determines owner vs staff flow
+  // Check Supabase for existing establishments. New owner signups still create
+  // a separate establishment; existing branches are only used in join mode.
   let existingEsts=[];
   if(USE_SUPABASE&&window.supabase){
     try{
@@ -1641,8 +1680,8 @@ async function doRegister(){
     if(d&&!isStarterDb(d)&&(d.venue?.name||d.brand?.appName))existingEsts.push({id:'default'});
   }
   const existingOwner=existingEsts.length>0;
-  if(!existingOwner){
-    // No owner yet — this person becomes the owner
+  if(REGISTER_MODE!=='join'){
+    // Create a new owner workspace, even if other businesses already exist.
     if(!est){$('#regMsg').textContent='Enter your branch name.';$('#regBtn').disabled=false;return;}
     const{data,error}=await sbSignUp(email,pass);
     if(error){
@@ -1654,8 +1693,13 @@ async function doRegister(){
     const newDb=blankDb(est);
     const bossUser={id:'boss',name,username:email,role:'boss',email,authId:data?.user?.id||SUPABASE_USER?.id||''};
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
-    ACTIVE_EST_ID='default';SUPABASE_USER=data?.user||SUPABASE_USER;
+    ACTIVE_EST_ID=existingOwner?('est_'+uid()):'default';SUPABASE_USER=data?.user||SUPABASE_USER;
     DB=newDb;localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+    if(ACTIVE_EST_ID!=='default'){
+      const ests=getEstablishments().filter(e=>e.id!==ACTIVE_EST_ID);
+      ests.push({id:ACTIVE_EST_ID,name:est,createdAt:now()});
+      saveEstablishments(ests);
+    }
     try{await sbSave();}catch(e){console.warn('Owner establishment cloud save failed:',e);$('#regMsg').textContent='Account made, but saving your establishment to the cloud failed'+(e?.message?(' ('+e.message+')'):'')+'. Check your Supabase tables.';$('#regBtn').disabled=false;return;}
     SESSION=bossUser;$('#register').style.display='none';$('#regBtn').disabled=false;
     finalizeLogin();
