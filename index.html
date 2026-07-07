@@ -678,7 +678,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <div style="font-size:12px;color:var(--muted);margin-top:3px">Used to log in. No spaces or special characters.</div>
     </div>
     <div class="field" id="regEstField">
-      <label>Branch name</label>
+      <label>Business name</label>
       <div class="inwrap"><input id="regEst" placeholder="e.g. The Anchor, Catering Co."></div>
     </div>
     <div class="field" id="regEstCodeField" style="display:none">
@@ -1532,7 +1532,7 @@ function showRegister(push=true){
     sel.disabled=true;
     sel.innerHTML='<option value="">Owner invite required</option>';
   }
-  if(sub)sub.textContent='Create a separate owner account and business workspace.';
+  if(sub)sub.textContent='Create your owner account and enter your business name.';
   if(btn)btn.textContent='Create account';
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
   if(push)pushPublicState('register');
@@ -1586,7 +1586,7 @@ async function doRegister(){
   await loadSupabaseSDK();
   if(REGISTER_MODE!=='join'){
     // Create a new owner workspace, even if other businesses already exist.
-    if(!est){$('#regMsg').textContent='Enter your branch name.';$('#regBtn').disabled=false;return;}
+    if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
     const{data,error}=await sbSignUp(email,pass);
     if(error){
       const msg=String(error.message||'');
@@ -1607,7 +1607,7 @@ async function doRegister(){
     try{await sbSave();}catch(e){console.warn('Owner establishment cloud save failed:',e);$('#regMsg').textContent='Account made, but saving your establishment to the cloud failed'+(e?.message?(' ('+e.message+')'):'')+'. Check your Supabase tables.';$('#regBtn').disabled=false;return;}
     SESSION=bossUser;$('#register').style.display='none';$('#regBtn').disabled=false;
     finalizeLogin();
-    toast('Welcome '+name+'! You are the owner of '+est+'.','good');
+    toast('Welcome '+name+'! Your business workspace is ready.','good');
   }else{
     // Branch exists — user joining a specific branch
     const sel=$('#regEstCode');
