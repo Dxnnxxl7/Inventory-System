@@ -1546,10 +1546,10 @@ function showRegister(push=true){
         // system ids). Never read the private establishment data blob anonymously.
         let data=null,error=null;
         {
-          const vresp=await anonClient.from('establishments_public').select('id,name,branches,systems');
+          const vresp=await anonClient.from('establishments_public').select('id,name,branches');
           if(!vresp.error&&vresp.data){
             // Shape view rows to match what the loop below expects.
-            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[],systems:e.systems||[]}}));
+            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[],systems:[]}}));
           }else{
             error=vresp.error||{message:'Public branch directory is not available.'};
           }
@@ -1571,11 +1571,13 @@ function showRegister(push=true){
                 if(!sysIds.length&&allSystems.length){
                   sysIds=allSystems.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
                 }
-                allBranches.push({estId:e.id,branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds});
+                const businessName=e.name||d.venue?.name||d.brand?.appName||'Business';
+                const branchName=b.label||'Main Branch';
+                allBranches.push({estId:e.id,branchId:b.id,label:branchName,businessName,systemIds:sysIds});
               });
             }catch(err){
               // fallback if data field has issues
-              allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Branch',systemIds:[]});
+              allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Branch',businessName:e.name||'Business',systemIds:[]});
             }
           });
         }
@@ -1591,7 +1593,7 @@ function showRegister(push=true){
       bs.forEach(b=>{
         if(!allBranches.find(x=>x.estId==='default'&&x.branchId===b.id)){
           const sysIds=ss.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
-          allBranches.push({estId:'default',branchId:b.id,label:b.label||'Main Branch',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
+          allBranches.push({estId:'default',branchId:b.id,label:b.label||'Main Branch',businessName:defaultDb.venue?.name||defaultDb.brand?.appName||'Local business',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
         }
       });
     }
@@ -1606,7 +1608,7 @@ function showRegister(push=true){
       REGISTER_BRANCHES.forEach(b=>{
         const opt=document.createElement('option');
         opt.value=JSON.stringify({estId:b.estId,branchId:b.branchId,systemIds:b.systemIds});
-        opt.textContent=b.label;
+        opt.textContent=(b.businessName&&b.businessName!==b.label)?`${b.businessName} - ${b.label}`:b.label;
         sel.appendChild(opt);
       });
     }else if(sel){
