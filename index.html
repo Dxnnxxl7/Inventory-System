@@ -1571,6 +1571,19 @@ replacePublicState(firstPublicView);
 if(firstPublicView==='login')showLogin(false);
 else if(firstPublicView==='register')showRegister(false);
 else if(firstPublicView==='forgot')showForgotPassword(false);
+async function findBusinessForStaffSignup(businessName){
+  if(!USE_SUPABASE||!businessName)return{match:null,error:null};
+  try{
+    await loadSupabaseSDK();
+    const client=getAnonClient();
+    if(!client)return{match:null,error:null};
+    const {data,error}=await client.rpc('find_establishment_for_staff_signup',{business_name:businessName});
+    if(error)return{match:null,error};
+    return{match:(data&&data[0])||null,error:null};
+  }catch(error){
+    return{match:null,error};
+  }
+}
 async function doRegister(){
   const name=$('#regName').value.trim();
   const est=$('#regEst')?$('#regEst').value.trim():'';
@@ -1587,6 +1600,79 @@ async function doRegister(){
   if(REGISTER_MODE!=='join'){
     // Create a new owner workspace, even if other businesses already exist.
     if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
+    const existingLookup=await findBusinessForStaffSignup(est);
+    if(existingLookup.error){
+      $('#regMsg').textContent='Could not check this business name yet. Run the updated supabase-security.sql, then try again.';
+      $('#regBtn').disabled=false;
+      return;
+    }
+    if(existingLookup.match){
+      const hit=existingLookup.match;
+      const selectedEstId=hit.establishment_id;
+      const selectedBranchId=hit.branch_id||'branch_1';
+      const firstScope=hit.system_id||'';
+      if(!firstScope){$('#regMsg').textContent='This business has no system available yet. Ask the owner to add one.';$('#regBtn').disabled=false;return;}
+      const loginUsername=username||email;
+      let authData=null;
+      let authLimited=false;
+      const sign=await sbSignUp(email,pass,{name,username:loginUsername,establishment_id:selectedEstId,branch_id:selectedBranchId});
+      if(sign.error&&String(sign.error.message||'').toLowerCase().includes('already')){
+        const retry=await sbSignIn(email,pass);
+        if(retry.error){
+          const retryMsg=String(retry.error.message||'').toLowerCase();
+          if(retryMsg.includes('rate limit')||retryMsg.includes('email rate'))authLimited=true;
+          else{$('#regMsg').textContent='This email already has an account. Log in first, or use the correct password.';$('#regBtn').disabled=false;return;}
+        }else authData=retry.data;
+      }else if(sign.error){
+        const msg=String(sign.error.message||'').toLowerCase();
+        const status=sign.error.status||sign.error.code;
+        if(msg.includes('rate limit')||msg.includes('email rate')||msg.includes('too many')||String(status)==='429')authLimited=true;
+        else{$('#regMsg').textContent=sign.error.message||('Sign up failed (status '+(status||'unknown')+'). Check Supabase auth settings.');$('#regBtn').disabled=false;return;}
+      }else authData=sign.data;
+      if(authLimited){
+        $('#regMsg').textContent='Too many signup attempts right now (rate limit). Please wait about an hour and try again.';
+        $('#regBtn').disabled=false;
+        return;
+      }
+      const authId=authData?.user?.id||SUPABASE_USER?.id||'';
+      const newUser={id:authId||uid(),name,username:loginUsername,role:'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:!!authId};
+      await setUserPassword(newUser,pass);
+      try{
+        const client=getAnonClient();
+        if(!client)throw new Error('Supabase not configured');
+        const pendingPayload={
+          id:newUser.id,
+          establishment_id:selectedEstId,
+          name:newUser.name,
+          username:newUser.username,
+          auth_user_id:newUser.authId||null,
+          pass_hash:newUser.passHash||'supabase-auth-account',
+          pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
+          email:newUser.email,
+          scope:newUser.scope,
+          branch_id:newUser.branchId,
+          created_at:new Date(newUser.pendingAt).toISOString()
+        };
+        const {error}=await client.from('pending_requests').insert(pendingPayload);
+        if(error&&!(String(error.message||'').toLowerCase().includes('duplicate key')||String(error.code||'')==='23505'))throw error;
+      }catch(e){
+        console.warn('Supabase pending save failed:',e);
+        $('#regMsg').textContent='Account created, but the approval request could not be sent'+(e?.message?(' ('+e.message+')'):'')+'.';
+        $('#regBtn').disabled=false;
+        try{await sbSignOut();}catch(_){}
+        return;
+      }
+      try{await sbSignOut();}catch(e){}
+      $('#register').style.display='none';$('#regBtn').disabled=false;
+      $('#auth').style.display='flex';
+      $('#authMsg').textContent='';
+      const pm=el('div');
+      pm.style.cssText='background:#fff9e6;border:1px solid #f0c040;padding:14px;border-radius:10px;text-align:center;font-size:13px;margin-top:12px;color:#7a5c00;line-height:1.5';
+      pm.textContent='\u2713 Staff request sent. The owner must approve you before you can log in.';
+      $('#auth').querySelector('.auth-card').appendChild(pm);
+      setTimeout(()=>{try{pm.remove();}catch(e){}},12000);
+      return;
+    }
     const{data,error}=await sbSignUp(email,pass);
     if(error){
       const msg=String(error.message||'');
