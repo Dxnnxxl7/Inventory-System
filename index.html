@@ -12,8 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Stored">
 <!-- Home-screen icon. Inline data-URI so the icon always resolves even if the .png file is missing; the file link is a higher-res fallback for browsers that prefer it. -->
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADmklEQVR4nO3dsXXbVhiAUSjOAmlccApv4M7ZIaXH0AAaw2V2sDtv4DncZAIfpUh0kiimRALPwuPHe0vhAXzFx/+A0iF0czgc7heI+GnvDcBIgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUn7eewPM4837t0ePffnw+QV3st7N4XC433sT7OupkB+bPWy3HFfunJjXrH9pgr5ia+OcOWpBX6mtUc4ataCv0KgYZ4xa0KQI+sqMnqqzTWlBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUjw5aVKf7r4dPfbu9tUL7uSyCHoyT4X8eI2w/88tx0ROiXnL+msg6EmsjVPU/yXoCWyNUtT/EPTORsUo6r8ImhRB72j0VDWlBU2MoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSPMbgGb//+svRY799/OMFd8IpBH3EUyE/XiPsebjl+I5TYt6ynh9H0I+sjVPUcxD0v2yNUtT7E/TfRsUo6n0JmhRBL+Onqim9H0GTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCkX9Z3Cu9evv/vz269fX3gnzOoigj4W8uPjwmbqoJ8L+dh6YV+vae+hz4151LlctmmDhjWmDHrEhDWlr9OUQcNa0wU9crKa0tdnuqBhC0GTImhSBE3KdEGP/Cvfqdca/XznU6/37vbV0Nc95XpfPnwe+pqjr7fVdEHDFlMGPWJKn3uNUVP63OuMmtLnXGfUVJ1tOi/LpEHvZWvUa8/fGvWa87fGOGPMyzJx0Fum9JZz10a59c2wNuotb4a1Uc4a87Isy83hcLjfexPPOfUvfiM/UJ7zSNyRHyo/3X07ee2o25U379+evHbmmJflQoJ+sMc3Vvb6t25PhT36tyMPngp79pAfXFTQ8Jxp76FhDUGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGT8ifFsaGszGWjYQAAAABJRU5ErkJggg==">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="icon" type="image/png" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <style>
 :root{
   --ink:#14110d;
@@ -748,7 +747,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.5';
+window.APP_VERSION='1.0.6';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -2189,7 +2188,10 @@ function finalizeLogin(){
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';$('#app').style.display='block';
   if(USE_SUPABASE&&SUPABASE_USER)subscribeRealtime();
-  CURRENT='today';saveSessionState();buildNav();renderBell();render();
+  const savedState=(()=>{try{return JSON.parse(sessionStorage.getItem('stockline_session')||localStorage.getItem('stockline_session')||'{}');}catch(e){return{};}})();
+  applySavedSessionState(savedState);
+  if(!appPageAllowed(CURRENT))CURRENT='today';
+  saveSessionState();buildNav();renderBell();render();
   retryCloudSaveSoon('login');
   checkCutoffs();
   showLoginGreeting();
