@@ -569,7 +569,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     </div>
     <div class="land-actions">
       <button class="btn ghost sm" type="button" onclick="showLogin()">Sign in</button>
-      <button class="btn brass sm" type="button" onclick="showRegister()">Start free</button>
+      <button class="btn brass sm" type="button" onclick="startSubscriptionCheckout()">Subscribe</button>
     </div>
   </header>
   <section class="land-hero">
@@ -577,8 +577,8 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <h1>Restaurant stock, without the end-of-day panic.</h1>
       <p>Stored gives owners, in-charge staff and teams one clean place to track stock, deliveries, cut-offs, wastage, temperature checks and branch operations.</p>
       <div class="land-ctas">
-        <button class="btn brass" type="button" onclick="showRegister()">Create your account</button>
-        <button class="btn ghost" type="button" onclick="showLogin()">I already have one</button>
+        <button class="btn brass" type="button" onclick="startSubscriptionCheckout()">Subscribe as owner</button>
+        <button class="btn ghost" type="button" onclick="showRegister()">Create staff account</button>
       </div>
       <div class="land-points">
         <div class="land-point"><b>Know what is low</b>Live stock status before service starts.</div>
@@ -642,7 +642,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div class="authmsg" id="authMsg"></div>
     <button class="btn brass full" id="loginBtn">Sign in</button>
     <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--muted)">
-      New here? <button onclick="showRegister()" style="background:none;border:none;color:var(--brass);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">Create an account</button>
+      Staff member? <button onclick="showRegister()" style="background:none;border:none;color:var(--brass);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">Create account with code</button>
     </div>
     <div class="role-pills" id="quickRoles"></div>
     <div class="demo-note" id="demoNote"></div>
@@ -1474,6 +1474,36 @@ const fpBtn=$('#fpBtn');if(fpBtn)fpBtn.onclick=doForgotPassword;
 const fpEmail=$('#fpEmail');if(fpEmail)fpEmail.addEventListener('keydown',e=>{if(e.key==='Enter')doForgotPassword();});
 let REGISTER_MODE='create';
 let REGISTER_BRANCHES=[];
+let OWNER_CHECKOUT=null;
+function checkoutSessionIdFromUrl(){
+  try{return new URLSearchParams(location.search).get('checkout_session_id')||'';}catch(e){return'';}
+}
+async function startSubscriptionCheckout(){
+  try{
+    const buttons=[...document.querySelectorAll('button')].filter(b=>/subscribe/i.test(b.textContent||''));
+    buttons.forEach(b=>{b.disabled=true;});
+    const res=await fetch('/api/create-checkout-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({plan:'starter'})});
+    const data=await res.json().catch(()=>({}));
+    buttons.forEach(b=>{b.disabled=false;});
+    if(!res.ok||!data.url){alert(data.error||'Could not start subscription checkout yet.');return;}
+    location.href=data.url;
+  }catch(error){
+    alert('Could not start subscription checkout. Check your Vercel Stripe environment variables.');
+  }
+}
+async function verifyOwnerCheckout(){
+  const sessionId=checkoutSessionIdFromUrl();
+  if(!sessionId)return{ok:false,error:'Missing checkout session.'};
+  try{
+    const res=await fetch('/api/verify-checkout-session?session_id='+encodeURIComponent(sessionId));
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok||!data.ok)return{ok:false,error:data.error||'Subscription is not active yet.'};
+    OWNER_CHECKOUT=Object.assign({session_id:sessionId},data);
+    return{ok:true,data:OWNER_CHECKOUT};
+  }catch(error){
+    return{ok:false,error:'Could not verify the subscription yet.'};
+  }
+}
 function setRegisterMode(mode){
   REGISTER_MODE=mode==='join'?'join':'create';
   const createBtn=$('#regModeCreate'),joinBtn=$('#regModeJoin');
@@ -1514,7 +1544,7 @@ function showRegister(push=true){
   if($('#regPass'))$('#regPass').value='';
   if($('#regEst'))$('#regEst').value='';
 
-  REGISTER_MODE='create';
+  REGISTER_MODE='staff';
   REGISTER_BRANCHES=[];
   const modeField=$('#regModeField');
   if(modeField)modeField.style.display='none';
@@ -1522,13 +1552,17 @@ function showRegister(push=true){
   if(createModeBtn)createModeBtn.onclick=()=>setRegisterMode('create');
   if(joinModeBtn)joinModeBtn.onclick=()=>setRegisterMode('join');
 
-  // Public signup must never list other businesses. A new owner creates a
-  // separate workspace; staff should join by owner invite, not a public branch list.
+  // Public signup must never list other businesses. Owners come from paid
+  // checkout; staff join by owner invite, not a public branch list.
   const sel=$('#regEstCode');
   const sub=$('#regSub');
   const btn=$('#regBtn');
 
   setRegisterMode('create');
+  const tag=$('#register .tag');if(tag)tag.textContent='Create staff account';
+  const estLabel=$('#regEstField label');if(estLabel)estLabel.textContent='Staff invite code';
+  const estInput=$('#regEst');if(estInput)estInput.placeholder='e.g. STO-AB12CD';
+  const estHelp=$('#regEstField div[style*="font-size:12px"]');if(estHelp)estHelp.textContent='Ask the owner for this one-time code.';
   if(sel){
     sel.disabled=true;
     sel.innerHTML='<option value="">Owner invite required</option>';
@@ -1537,6 +1571,42 @@ function showRegister(push=true){
   if(btn)btn.textContent='Create account';
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
   if(push)pushPublicState('register');
+}
+async function showOwnerSignup(push=true){
+  const land=$('#landing');if(land)land.style.display='none';
+  $('#auth').style.display='none';
+  const fpEl=$('#forgotPassword');if(fpEl)fpEl.style.display='none';
+  $('#register').style.display='flex';
+  applyPublicTitle();
+  $('#regMsg').textContent='Checking your subscription...';
+  if($('#regName'))$('#regName').value='';
+  if($('#regUsername'))$('#regUsername').value='';
+  if($('#regEmail'))$('#regEmail').value='';
+  if($('#regPass'))$('#regPass').value='';
+  if($('#regEst'))$('#regEst').value='';
+  REGISTER_MODE='owner';
+  const modeField=$('#regModeField');if(modeField)modeField.style.display='none';
+  setRegisterMode('create');
+  const tag=$('#register .tag');if(tag)tag.textContent='Create owner account';
+  const sub=$('#regSub');if(sub)sub.textContent='Your subscription is active. Create the owner account for this business.';
+  const usernameF=$('#regUsernameField');if(usernameF)usernameF.style.display='none';
+  const estField=$('#regEstField');if(estField)estField.style.display='block';
+  const estLabel=$('#regEstField label');if(estLabel)estLabel.textContent='Business name';
+  const estInput=$('#regEst');if(estInput)estInput.placeholder='e.g. Daniell Restaurant';
+  const estHelp=$('#regEstField div[style*="font-size:12px"]');if(estHelp)estHelp.textContent='This becomes the separate business workspace for the subscriber.';
+  const sel=$('#regEstCode');if(sel){sel.disabled=true;sel.innerHTML='<option value="">Not needed for owners</option>';}
+  const btn=$('#regBtn');if(btn){btn.textContent='Create owner account';btn.disabled=true;}
+  const checked=await verifyOwnerCheckout();
+  if(!checked.ok){
+    $('#regMsg').textContent=checked.error+' Start the subscription again if payment was cancelled.';
+    if(btn)btn.disabled=true;
+    return;
+  }
+  if(OWNER_CHECKOUT.email&&$('#regEmail'))$('#regEmail').value=OWNER_CHECKOUT.email;
+  $('#regMsg').textContent='';
+  if(btn)btn.disabled=false;
+  setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
+  if(push)pushPublicState('owner-signup');
 }
 function showLogin(push=true){
   const land=$('#landing');if(land)land.style.display='none';
@@ -6206,7 +6276,7 @@ function makeInviteCode(){
 }
 async function createStaffInvite(scope,role){
   if(!USE_SUPABASE){toast('Cloud sync must be connected before creating invite codes.','bad');return null;}
-  if(!SUPABASE_USER){toast('Sign in with the owner email first, then create an invite code.','bad');return null;}
+  if(!SUPABASE_USER){toast('Sign in with your approved owner or in-charge email first, then create an invite code.','bad');return null;}
   const client=sb();if(!client){toast('Supabase not configured','bad');return null;}
   const sys=(DB.systems||[]).find(s=>s.id===scope)||(DB.systems||[])[0];
   if(!sys){toast('Create a system before inviting staff.','bad');return null;}
@@ -6863,7 +6933,7 @@ function settingsSystems(main){
     teamHdr.appendChild(addStaffBtn);
   }
   teamDiv.appendChild(teamHdr);
-  if(isBoss){
+  if(isBoss||isIncharge){
     const inviteBox=el('div');
     inviteBox.style.cssText='border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;background:#fffdf8';
     inviteBox.innerHTML='<b style="font-size:13px">Staff invite code</b><div class="suptag" style="margin-top:5px">Generate a one-use code for this branch. Staff must use this code when creating their account.</div>';
