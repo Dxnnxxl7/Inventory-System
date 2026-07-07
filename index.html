@@ -1521,102 +1521,19 @@ function showRegister(push=true){
   if(createModeBtn)createModeBtn.onclick=()=>setRegisterMode('create');
   if(joinModeBtn)joinModeBtn.onclick=()=>setRegisterMode('join');
 
-  // Always load branches from Supabase so users can choose create vs join.
+  // Public signup must never list other businesses. A new owner creates a
+  // separate workspace; staff should join by owner invite, not a public branch list.
   const sel=$('#regEstCode');
-  const estF=$('#regEstField');
-  const estCF=$('#regEstCodeField');
   const sub=$('#regSub');
   const btn=$('#regBtn');
 
-  const usernameF=$('#regUsernameField');
   setRegisterMode('create');
   if(sel){
     sel.disabled=true;
-    sel.innerHTML='<option value="">Loading branches\u2026</option>';
+    sel.innerHTML='<option value="">Owner invite required</option>';
   }
-  if(sub)sub.textContent='Checking branches\u2026';
-  if(btn)btn.textContent='Continue';
-
-  loadSupabaseSDK().then(async()=>{
-    const allBranches=[]; // {estId, branchId, label, systemIds}
-    if(USE_SUPABASE&&window.supabase){
-      try{
-        const anonClient=getAnonClient();
-        // SECURITY: read only the safe public view (id, name, branch labels and
-        // system ids). Never read the private establishment data blob anonymously.
-        let data=null,error=null;
-        {
-          const vresp=await anonClient.from('establishments_public').select('id,name,branches');
-          if(!vresp.error&&vresp.data){
-            // Shape view rows to match what the loop below expects.
-            data=vresp.data.map(e=>({id:e.id,name:e.name,data:{branches:e.branches||[],systems:[]}}));
-          }else{
-            error=vresp.error||{message:'Public branch directory is not available.'};
-          }
-        }
-        if(error)console.warn('Branch fetch error:',error.message);
-        if(data&&data.length){
-          data.forEach(e=>{
-            try{
-              const d=e.data||{};
-              const allSystems=Array.isArray(d.systems)?d.systems:[];
-              let bs=[...(d.branches||[])];
-              if(!bs.find(b=>b.id==='branch_1')){
-                bs.unshift({id:'branch_1',label:d.venue?.name||e.name||d.brand?.appName||'Main Branch',short:'MAIN'});
-              }
-              bs.forEach(b=>{
-                // Prefer systemIds embedded in the branch; otherwise derive from
-                // the flat systems list by matching branchId (covers synthesized branch_1).
-                let sysIds=Array.isArray(b.systemIds)?b.systemIds:[];
-                if(!sysIds.length&&allSystems.length){
-                  sysIds=allSystems.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
-                }
-                const businessName=e.name||d.venue?.name||d.brand?.appName||'Business';
-                const branchName=b.label||'Main Branch';
-                allBranches.push({estId:e.id,branchId:b.id,label:branchName,businessName,systemIds:sysIds});
-              });
-            }catch(err){
-              // fallback if data field has issues
-              allBranches.push({estId:e.id,branchId:'branch_1',label:e.name||'Branch',businessName:e.name||'Business',systemIds:[]});
-            }
-          });
-        }
-      }catch(e){console.warn('Branch fetch failed:',e.message||e);}
-    }
-    const defaultDb=loadEst('default');
-    if(defaultDb&&!isStarterDb(defaultDb)){
-      let bs=[...(defaultDb.branches||[])];
-      if(!bs.find(b=>b.id==='branch_1')){
-        bs.unshift({id:'branch_1',label:defaultDb.venue?.name||defaultDb.brand?.appName||'Main Branch',short:'MAIN'});
-      }
-      const ss=defaultDb.systems||[];
-      bs.forEach(b=>{
-        if(!allBranches.find(x=>x.estId==='default'&&x.branchId===b.id)){
-          const sysIds=ss.filter(s=>(s.branchId||'branch_1')===b.id).map(s=>s.id);
-          allBranches.push({estId:'default',branchId:b.id,label:b.label||'Main Branch',businessName:defaultDb.venue?.name||defaultDb.brand?.appName||'Local business',systemIds:sysIds.length?sysIds:ss.map(s=>s.id)});
-        }
-      });
-    }
-
-    REGISTER_BRANCHES=allBranches;
-    const hasBranches=REGISTER_BRANCHES.length>0;
-    if(modeField)modeField.style.display=hasBranches?'block':'none';
-
-    if(sel&&hasBranches){
-      sel.disabled=false;
-      sel.innerHTML='<option value="">Select branch\u2026</option>';
-      REGISTER_BRANCHES.forEach(b=>{
-        const opt=document.createElement('option');
-        opt.value=JSON.stringify({estId:b.estId,branchId:b.branchId,systemIds:b.systemIds});
-        opt.textContent=(b.businessName&&b.businessName!==b.label)?`${b.businessName} - ${b.label}`:b.label;
-        sel.appendChild(opt);
-      });
-    }else if(sel){
-      sel.disabled=false;
-      sel.innerHTML='<option value="">No branch yet</option>';
-    }
-    setRegisterMode('create');
-  });
+  if(sub)sub.textContent='Create a separate owner account and business workspace.';
+  if(btn)btn.textContent='Create account';
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
   if(push)pushPublicState('register');
 }
@@ -1667,21 +1584,6 @@ async function doRegister(){
   $('#regMsg').textContent='Creating your account\u2026';
   $('#regBtn').disabled=true;
   await loadSupabaseSDK();
-  // Check Supabase for existing establishments. New owner signups still create
-  // a separate establishment; existing branches are only used in join mode.
-  let existingEsts=[];
-  if(USE_SUPABASE&&window.supabase){
-    try{
-      const anonClient=getAnonClient();
-      const{data}=await anonClient.from('establishments_public').select('id,name');
-      if(data&&data.length)existingEsts=data;
-    }catch(e){}
-  }
-  if(!existingEsts.length){
-    const d=loadEst('default');
-    if(d&&!isStarterDb(d)&&(d.venue?.name||d.brand?.appName))existingEsts.push({id:'default'});
-  }
-  const existingOwner=existingEsts.length>0;
   if(REGISTER_MODE!=='join'){
     // Create a new owner workspace, even if other businesses already exist.
     if(!est){$('#regMsg').textContent='Enter your branch name.';$('#regBtn').disabled=false;return;}
@@ -1695,7 +1597,7 @@ async function doRegister(){
     const newDb=blankDb(est);
     const bossUser={id:'boss',name,username:email,role:'boss',email,authId:data?.user?.id||SUPABASE_USER?.id||''};
     newDb.users=[bossUser];newDb.venue.name=est;newDb.brand.appName=est;
-    ACTIVE_EST_ID=existingOwner?('est_'+uid()):'default';SUPABASE_USER=data?.user||SUPABASE_USER;
+    ACTIVE_EST_ID='est_'+uid();SUPABASE_USER=data?.user||SUPABASE_USER;
     DB=newDb;localStorage.setItem(currentDbKey(),JSON.stringify(DB));
     if(ACTIVE_EST_ID!=='default'){
       const ests=getEstablishments().filter(e=>e.id!==ACTIVE_EST_ID);
