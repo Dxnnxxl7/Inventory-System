@@ -678,8 +678,9 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <div style="font-size:12px;color:var(--muted);margin-top:3px">Used to log in. No spaces or special characters.</div>
     </div>
     <div class="field" id="regEstField">
-      <label>Business name</label>
-      <div class="inwrap"><input id="regEst" placeholder="e.g. The Anchor, Catering Co."></div>
+      <label>Staff invite code</label>
+      <div class="inwrap"><input id="regEst" placeholder="e.g. STO-AB12CD"></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">Ask the owner for this code. Owner accounts are created when a business subscribes.</div>
     </div>
     <div class="field" id="regEstCodeField" style="display:none">
       <label>Branch</label>
@@ -1532,7 +1533,7 @@ function showRegister(push=true){
     sel.disabled=true;
     sel.innerHTML='<option value="">Owner invite required</option>';
   }
-  if(sub)sub.textContent='Create your owner account and enter your business name.';
+  if(sub)sub.textContent='Enter the invite code from the business owner to request staff access.';
   if(btn)btn.textContent='Create account';
   setTimeout(()=>$('#regName')&&$('#regName').focus(),100);
   if(push)pushPublicState('register');
@@ -1584,6 +1585,31 @@ async function findBusinessForStaffSignup(businessName){
     return{match:null,error};
   }
 }
+async function lookupStaffInvite(inviteCode){
+  if(!USE_SUPABASE||!inviteCode)return{invite:null,error:null};
+  try{
+    await loadSupabaseSDK();
+    const client=getAnonClient();
+    if(!client)return{invite:null,error:{message:'Supabase not configured'}};
+    const {data,error}=await client.rpc('lookup_staff_invite',{invite_code:inviteCode});
+    if(error)return{invite:null,error};
+    return{invite:(data&&data[0])||null,error:null};
+  }catch(error){
+    return{invite:null,error};
+  }
+}
+async function markStaffInviteUsed(inviteCode){
+  if(!USE_SUPABASE||!inviteCode)return{error:null};
+  try{
+    await loadSupabaseSDK();
+    const client=getAnonClient();
+    if(!client)return{error:{message:'Supabase not configured'}};
+    const {error}=await client.rpc('mark_staff_invite_used',{invite_code:inviteCode});
+    return{error:error||null};
+  }catch(error){
+    return{error};
+  }
+}
 async function doRegister(){
   const name=$('#regName').value.trim();
   const est=$('#regEst')?$('#regEst').value.trim():'';
@@ -1597,6 +1623,87 @@ async function doRegister(){
   $('#regMsg').textContent='Creating your account\u2026';
   $('#regBtn').disabled=true;
   await loadSupabaseSDK();
+  const inviteLookup=await lookupStaffInvite(est);
+  if(inviteLookup.error){
+    $('#regMsg').textContent='Could not check that invite code. Run the updated supabase-security.sql, then try again.';
+    $('#regBtn').disabled=false;
+    return;
+  }
+  if(!inviteLookup.invite){
+    $('#regMsg').textContent='Enter a valid staff invite code from the business owner.';
+    $('#regBtn').disabled=false;
+    return;
+  }
+  {
+    const invite=inviteLookup.invite;
+    const selectedEstId=invite.establishment_id;
+    const selectedBranchId=invite.branch_id||'branch_1';
+    const firstScope=invite.scope||'';
+    if(!firstScope){$('#regMsg').textContent='This invite code is missing a system. Ask the owner to generate a new code.';$('#regBtn').disabled=false;return;}
+    const loginUsername=username||email;
+    let authData=null;
+    let authLimited=false;
+    const sign=await sbSignUp(email,pass,{name,username:loginUsername,establishment_id:selectedEstId,branch_id:selectedBranchId,invite_code:est});
+    if(sign.error&&String(sign.error.message||'').toLowerCase().includes('already')){
+      const retry=await sbSignIn(email,pass);
+      if(retry.error){
+        const retryMsg=String(retry.error.message||'').toLowerCase();
+        if(retryMsg.includes('rate limit')||retryMsg.includes('email rate'))authLimited=true;
+        else{$('#regMsg').textContent='This email already has an account. Log in first, or use the correct password.';$('#regBtn').disabled=false;return;}
+      }else authData=retry.data;
+    }else if(sign.error){
+      const msg=String(sign.error.message||'').toLowerCase();
+      const status=sign.error.status||sign.error.code;
+      if(msg.includes('rate limit')||msg.includes('email rate')||msg.includes('too many')||String(status)==='429')authLimited=true;
+      else{$('#regMsg').textContent=sign.error.message||('Sign up failed (status '+(status||'unknown')+'). Check Supabase auth settings.');$('#regBtn').disabled=false;return;}
+    }else authData=sign.data;
+    if(authLimited){
+      $('#regMsg').textContent='Too many signup attempts right now (rate limit). Please wait about an hour and try again.';
+      $('#regBtn').disabled=false;
+      return;
+    }
+    const authId=authData?.user?.id||SUPABASE_USER?.id||'';
+    const newUser={id:authId||uid(),name,username:loginUsername,role:invite.role||'staff',email,authId,scope:firstScope,branchId:selectedBranchId,pending:true,pendingAt:now(),authRequired:!!authId};
+    await setUserPassword(newUser,pass);
+    try{
+      const client=getAnonClient();
+      if(!client)throw new Error('Supabase not configured');
+      const pendingPayload={
+        id:newUser.id,
+        establishment_id:selectedEstId,
+        name:newUser.name,
+        username:newUser.username,
+        auth_user_id:newUser.authId||null,
+        pass:newUser.authId?('auth:'+newUser.authId):('hash:'+newUser.passSalt+':'+newUser.passHash),
+        pass_hash:newUser.passHash||'supabase-auth-account',
+        pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
+        email:newUser.email,
+        scope:newUser.scope,
+        branch_id:newUser.branchId,
+        created_at:new Date(newUser.pendingAt).toISOString()
+      };
+      const {error}=await client.from('pending_requests').insert(pendingPayload);
+      if(error&&!(String(error.message||'').toLowerCase().includes('duplicate key')||String(error.code||'')==='23505'))throw error;
+      const used=await markStaffInviteUsed(est);
+      if(used.error)console.warn('Could not mark invite as used:',used.error);
+    }catch(e){
+      console.warn('Supabase pending save failed:',e);
+      $('#regMsg').textContent='Account created, but the approval request could not be sent'+(e?.message?(' ('+e.message+')'):'')+'.';
+      $('#regBtn').disabled=false;
+      try{await sbSignOut();}catch(_){}
+      return;
+    }
+    try{await sbSignOut();}catch(e){}
+    $('#register').style.display='none';$('#regBtn').disabled=false;
+    $('#auth').style.display='flex';
+    $('#authMsg').textContent='';
+    const pm=el('div');
+    pm.style.cssText='background:#fff9e6;border:1px solid #f0c040;padding:14px;border-radius:10px;text-align:center;font-size:13px;margin-top:12px;color:#7a5c00;line-height:1.5';
+    pm.textContent='\u2713 Staff request sent. The owner must approve you before you can log in.';
+    $('#auth').querySelector('.auth-card').appendChild(pm);
+    setTimeout(()=>{try{pm.remove();}catch(e){}},12000);
+    return;
+  }
   if(REGISTER_MODE!=='join'){
     // Create a new owner workspace, even if other businesses already exist.
     if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
@@ -1646,6 +1753,7 @@ async function doRegister(){
           name:newUser.name,
           username:newUser.username,
           auth_user_id:newUser.authId||null,
+          pass:newUser.authId?('auth:'+newUser.authId):('hash:'+newUser.passSalt+':'+newUser.passHash),
           pass_hash:newUser.passHash||'supabase-auth-account',
           pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
           email:newUser.email,
@@ -1747,6 +1855,7 @@ async function doRegister(){
             name:newUser.name,
             username:newUser.username,
             auth_user_id:newUser.authId||null,
+            pass:newUser.authId?('auth:'+newUser.authId):('hash:'+newUser.passSalt+':'+newUser.passHash),
             pass_hash:newUser.passHash||'supabase-auth-account',
             pass_salt:newUser.passSalt||newUser.authId||'supabase-auth',
             email:newUser.email,
@@ -6089,6 +6198,56 @@ function changeRoleModal(u){
   f.appendChild(cancel);f.appendChild(ok);openModal('Change role \u2014 '+esc(u.name),body,f);
 }
 
+function makeInviteCode(){
+  const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s='STO-';
+  for(let i=0;i<6;i++)s+=alphabet[Math.floor(Math.random()*alphabet.length)];
+  return s;
+}
+async function createStaffInvite(scope,role){
+  if(!USE_SUPABASE){toast('Cloud sync must be connected before creating invite codes.','bad');return null;}
+  if(!SUPABASE_USER){toast('Sign in with the owner email first, then create an invite code.','bad');return null;}
+  const client=sb();if(!client){toast('Supabase not configured','bad');return null;}
+  const sys=(DB.systems||[]).find(s=>s.id===scope)||(DB.systems||[])[0];
+  if(!sys){toast('Create a system before inviting staff.','bad');return null;}
+  for(let attempt=0;attempt<3;attempt++){
+    const code=makeInviteCode();
+    const rec={
+      code,
+      establishment_id:ACTIVE_EST_ID,
+      role:role||'staff',
+      scope:sys.id,
+      branch_id:sys.branchId||'branch_1',
+      active:true,
+      max_uses:1,
+      expires_at:new Date(Date.now()+14*24*60*60*1000).toISOString(),
+      created_by:SUPABASE_USER.id
+    };
+    const {error}=await client.from('staff_invites').insert(rec);
+    if(!error)return rec;
+    if(!(String(error.message||'').toLowerCase().includes('duplicate')||String(error.code||'')==='23505')){
+      toast('Invite failed: '+(error.message||'run the latest setup SQL'),'bad');
+      return null;
+    }
+  }
+  toast('Could not create a unique code. Try again.','bad');
+  return null;
+}
+function inviteCodeModal(code){
+  const body=el('div');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px">Give this code to the staff member. They must use it on the Create account screen. It expires in 14 days and can be used once.</div>';
+  const codeBox=el('div');
+  codeBox.style.cssText='font-family:Avenir Next,Segoe UI,system-ui,sans-serif;font-weight:900;font-size:28px;letter-spacing:.08em;text-align:center;border:1px solid var(--line);border-radius:10px;padding:18px;background:#fff;margin-bottom:12px';
+  codeBox.textContent=code;
+  body.appendChild(codeBox);
+  const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
+  const copy=el('button','btn brass','Copy code');copy.style.flex='2';
+  copy.onclick=()=>{navigator.clipboard?.writeText(code).then(()=>toast('Code copied','good')).catch(()=>toast('Code: '+code,'warn'));};
+  const done=el('button','btn ghost','Done');done.style.flex='1';done.onclick=closeModal;
+  foot.appendChild(copy);foot.appendChild(done);
+  openModal('Staff invite code',body,foot);
+}
+
 function pageSettings(main){
   // Suppress realtime re-renders while on settings to prevent modal interference
   SUPPRESS_REALTIME=true;
@@ -6265,6 +6424,25 @@ function settingsTeam(main){
       ra.appendChild(approve);ra.appendChild(reject);row.appendChild(ra);pCard.appendChild(row);
     });
     main.appendChild(pCard);
+  }
+  if(SESSION.role==='boss'||SESSION.role==='incharge'){
+    const inviteCard=el('div','card pad');
+    inviteCard.style.marginBottom='14px';
+    inviteCard.innerHTML='<div class="flex-between"><div><b>Staff invite code</b><div class="suptag" style="margin-top:6px">Generate a one-use code for a staff member. They cannot create an account without a valid code.</div></div></div>';
+    const controls=el('div','row-actions');controls.style.cssText='margin-top:12px;justify-content:flex-start;flex-wrap:wrap';
+    const scopeI=selectEl(visibleSystems().map(s=>({label:scopeLabel(s.id),value:s.id})),visibleSystems()[0]?.id||SCOPE);
+    const roleI=selectEl([{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}],'staff');
+    scopeI.style.minWidth='160px';roleI.style.minWidth='130px';
+    const gen=el('button','btn brass sm','Generate code');
+    gen.onclick=async()=>{
+      gen.disabled=true;gen.textContent='Generating...';
+      const rec=await createStaffInvite(scopeI.value,roleI.value);
+      gen.disabled=false;gen.textContent='Generate code';
+      if(rec)inviteCodeModal(rec.code);
+    };
+    controls.appendChild(scopeI);controls.appendChild(roleI);controls.appendChild(gen);
+    inviteCard.appendChild(controls);
+    main.appendChild(inviteCard);
   }
   const hdr=el('div','flex-between');hdr.style.marginBottom='12px';
   hdr.appendChild(el('div',null,''));
