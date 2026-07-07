@@ -6863,6 +6863,32 @@ function settingsSystems(main){
     teamHdr.appendChild(addStaffBtn);
   }
   teamDiv.appendChild(teamHdr);
+  if(isBoss){
+    const inviteBox=el('div');
+    inviteBox.style.cssText='border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;background:#fffdf8';
+    inviteBox.innerHTML='<b style="font-size:13px">Staff invite code</b><div class="suptag" style="margin-top:5px">Generate a one-use code for this branch. Staff must use this code when creating their account.</div>';
+    const inviteControls=el('div','row-actions');
+    inviteControls.style.cssText='margin-top:10px;justify-content:flex-start;flex-wrap:wrap';
+    const scopeOptions=(branchSystems.length?branchSystems:visibleSystems()).map(s=>({label:scopeLabel(s.id),value:s.id}));
+    const scopeI=selectEl(scopeOptions,scopeOptions[0]?.value||SCOPE);
+    const roleI=selectEl([{label:'Staff',value:'staff'},{label:'In-charge',value:'incharge'}],'staff');
+    scopeI.style.minWidth='160px';
+    roleI.style.minWidth='130px';
+    const gen=el('button','btn brass sm','Generate staff code');
+    gen.onclick=async()=>{
+      gen.disabled=true;
+      gen.textContent='Generating...';
+      const rec=await createStaffInvite(scopeI.value,roleI.value);
+      gen.disabled=false;
+      gen.textContent='Generate staff code';
+      if(rec)inviteCodeModal(rec.code);
+    };
+    inviteControls.appendChild(scopeI);
+    inviteControls.appendChild(roleI);
+    inviteControls.appendChild(gen);
+    inviteBox.appendChild(inviteControls);
+    teamDiv.appendChild(inviteBox);
+  }
   const branchStaff=DB.users.filter(u=>u.role!=='boss'&&!u.pending&&(u.branchId===branch.id||(branchSystems.some(s=>s.id===u.scope)&&!u.branchId)));
   if(branchStaff.length){
     branchStaff.forEach(u=>{
