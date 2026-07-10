@@ -1716,7 +1716,7 @@ function checkoutSessionIdFromUrl(){
 function paypalSubscriptionIdFromUrl(){
   try{
     const qs=new URLSearchParams(location.search);
-    const values=[qs.get('paypal_subscription_id'),qs.get('subscription_id'),qs.get('subscriptionID'),qs.get('token')];
+    const values=[qs.get('paypal_subscription_id'),qs.get('subscription_id'),qs.get('subscriptionID'),qs.get('ba_token'),qs.get('token')];
     return values.find(v=>v&&v!=='{id}')||'';
   }catch(e){return'';}
 }
@@ -1894,7 +1894,7 @@ window.addEventListener('popstate',e=>{
   else if(view==='forgot')showForgotPassword(false);
   else showLanding(false);
 });
-const firstPublicView=location.hash.replace('#','')||'landing';
+const firstPublicView=(paypalSubscriptionIdFromUrl()||new URLSearchParams(location.search).get('owner_signup'))?'owner-signup':(location.hash.replace('#','')||'landing');
 replacePublicState(firstPublicView);
 if(firstPublicView==='login')showLogin(false);
 else if(firstPublicView==='register')showRegister(false);
