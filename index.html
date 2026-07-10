@@ -1713,27 +1713,46 @@ let OWNER_CHECKOUT=null;
 function checkoutSessionIdFromUrl(){
   try{return new URLSearchParams(location.search).get('checkout_session_id')||'';}catch(e){return'';}
 }
+function paypalSubscriptionIdFromUrl(){
+  try{
+    const qs=new URLSearchParams(location.search);
+    const values=[qs.get('paypal_subscription_id'),qs.get('subscription_id'),qs.get('subscriptionID'),qs.get('token')];
+    return values.find(v=>v&&v!=='{id}')||'';
+  }catch(e){return'';}
+}
 async function startSubscriptionCheckout(){
   try{
     const buttons=[...document.querySelectorAll('button')].filter(b=>/subscribe/i.test(b.textContent||''));
     buttons.forEach(b=>{b.disabled=true;});
-    const res=await fetch('/api/create-checkout-session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({plan:'starter'})});
+    const res=await fetch('/api/create-paypal-subscription',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({plan:'starter'})});
     const data=await res.json().catch(()=>({}));
     buttons.forEach(b=>{b.disabled=false;});
     if(!res.ok||!data.url){alert(data.error||'Could not start subscription checkout yet.');return;}
     location.href=data.url;
   }catch(error){
-    alert('Could not start subscription checkout. Check your Vercel Stripe environment variables.');
+    alert('Could not start subscription checkout. Check your Vercel PayPal environment variables.');
   }
 }
 async function verifyOwnerCheckout(){
+  const paypalSubscriptionId=paypalSubscriptionIdFromUrl();
+  if(paypalSubscriptionId){
+    try{
+      const res=await fetch('/api/verify-paypal-subscription?subscription_id='+encodeURIComponent(paypalSubscriptionId));
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok||!data.ok)return{ok:false,error:data.error||'Subscription is not active yet.'};
+      OWNER_CHECKOUT=Object.assign({ok:true,provider:'paypal',paypal_subscription_id:paypalSubscriptionId},data);
+      return{ok:true,data:OWNER_CHECKOUT};
+    }catch(error){
+      return{ok:false,error:'Could not verify the PayPal subscription yet.'};
+    }
+  }
   const sessionId=checkoutSessionIdFromUrl();
   if(!sessionId)return{ok:false,error:'Missing checkout session.'};
   try{
     const res=await fetch('/api/verify-checkout-session?session_id='+encodeURIComponent(sessionId));
     const data=await res.json().catch(()=>({}));
     if(!res.ok||!data.ok)return{ok:false,error:data.error||'Subscription is not active yet.'};
-    OWNER_CHECKOUT=Object.assign({ok:true,session_id:sessionId},data);
+    OWNER_CHECKOUT=Object.assign({ok:true,provider:'stripe',session_id:sessionId},data);
     return{ok:true,data:OWNER_CHECKOUT};
   }catch(error){
     return{ok:false,error:'Could not verify the subscription yet.'};
@@ -1937,7 +1956,7 @@ async function doRegister(){
     const checked=OWNER_CHECKOUT?.ok?{ok:true,data:OWNER_CHECKOUT}:await verifyOwnerCheckout();
     if(!checked.ok){$('#regMsg').textContent=checked.error||'Subscription must be active before creating an owner account.';$('#regBtn').disabled=false;return;}
     const paid=checked.data||OWNER_CHECKOUT||{};
-    const sign=await sbSignUp(email,pass,{name,role:'boss',business_name:est,checkout_session_id:paid.session_id||'',stripe_customer_id:paid.customer_id||'',stripe_subscription_id:paid.subscription_id||''});
+    const sign=await sbSignUp(email,pass,{name,role:'boss',business_name:est,checkout_session_id:paid.session_id||'',stripe_customer_id:paid.customer_id||'',stripe_subscription_id:paid.subscription_id||'',paypal_subscription_id:paid.paypal_subscription_id||paid.subscription_id||''});
     if(sign.error){
       $('#regMsg').textContent=sign.error.message||'Could not create the owner login.';
       $('#regBtn').disabled=false;
@@ -1954,7 +1973,9 @@ async function doRegister(){
     SUPABASE_USER=sign.data?.user||SUPABASE_USER;
     DB=newDb;
     localStorage.setItem(currentDbKey(),JSON.stringify(DB));
-    const currentPeriodEnd=paid.current_period_end?new Date(paid.current_period_end*1000).toISOString():null;
+    const currentPeriodEnd=paid.current_period_end
+      ? (typeof paid.current_period_end==='number'?new Date(paid.current_period_end*1000).toISOString():new Date(paid.current_period_end).toISOString())
+      : null;
     try{
       const client=sb();
       if(!client)throw new Error('Supabase not configured');
@@ -1966,9 +1987,13 @@ async function doRegister(){
         updated_at:new Date().toISOString(),
         subscription_status:paid.subscription_status||'active',
         plan:'starter',
+        payment_provider:paid.provider||'paypal',
         stripe_checkout_session_id:paid.session_id||null,
         stripe_customer_id:paid.customer_id||null,
-        stripe_subscription_id:paid.subscription_id||null,
+        stripe_subscription_id:paid.provider==='stripe'?paid.subscription_id||null:null,
+        paypal_subscription_id:paid.paypal_subscription_id||((paid.provider||'paypal')==='paypal'?paid.subscription_id||null:null),
+        paypal_plan_id:paid.plan_id||null,
+        paypal_payer_id:paid.payer_id||null,
         billing_email:email,
         current_period_end:currentPeriodEnd,
         billing_updated_at:new Date().toISOString()
@@ -7538,7 +7563,7 @@ function settingsLaunchChecklist(main){
   const external=el('div','card pad');external.style.marginTop='14px';
   external.innerHTML=`<b>External setup still required</b>
     <div class="suptag" style="margin-top:8px;line-height:1.7">
-      Run <b>supabase-security.sql</b> in Supabase SQL Editor, test with two separate businesses, and connect Stripe or another billing provider before public sale.
+      Run <b>supabase-security.sql</b> and <b>subscription-setup.sql</b> in Supabase SQL Editor, test with two separate businesses, and connect PayPal before public sale.
     </div>`;
   main.appendChild(external);
 }
