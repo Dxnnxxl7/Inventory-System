@@ -555,6 +555,239 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 
 /* Hamburger only on mobile/tablet */
 @media(min-width:861px){ .hamb{display:none} }
+
+/* ---------- MOBILE APP POLISH ---------- */
+@media(max-width:640px){
+  html,body{min-width:0;overscroll-behavior-x:none}
+  body{font-size:15px;background:#fff}
+
+  #auth,#register,#forgotPassword{
+    align-items:flex-start;
+    justify-content:center;
+    padding:calc(14px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom));
+    overflow-y:auto;
+  }
+  .auth-card{
+    max-width:none;
+    width:min(100%,430px);
+    padding:22px 18px;
+    border-radius:14px;
+    margin:0 auto;
+  }
+  .brandmark{gap:10px;margin-bottom:8px}
+  .brandmark h1{font-size:23px}
+  .brandmark .tag{font-size:11px;line-height:1.25}
+  .auth-sub{font-size:13px;line-height:1.45;margin:10px 0 18px}
+  .field{margin-bottom:12px}
+  .field label{font-size:11px}
+  .field input,.field select{padding:12px;border-radius:9px;font-size:16px}
+  .peek{right:8px}
+
+  #app{padding-top:56px}
+  .topbar{
+    height:56px;
+    padding:8px 9px;
+    gap:7px;
+    overflow:hidden;
+    flex-wrap:nowrap;
+  }
+  .hamb{width:36px;height:36px;border-radius:8px}
+  .topbar .tb-logo{width:30px;height:30px;border-radius:8px}
+  .tb-title{
+    flex:1 1 auto;
+    font-size:14px;
+    line-height:1.08;
+    min-width:0;
+  }
+  .tb-title small{font-size:10px;margin-top:2px}
+  .tb-spacer{display:none}
+  .top-clock{display:none}
+  .bell{width:34px;height:34px;border-radius:8px;font-size:16px;flex:0 0 34px}
+  #syncDot{display:none!important}
+  #branchSwitchBtn{
+    width:34px;
+    height:34px;
+    padding:0!important;
+    border-radius:8px;
+    justify-content:center;
+  }
+
+  .layout{min-height:calc(100vh - 56px)}
+  .sidebar{
+    top:56px;
+    width:min(86vw,310px);
+    height:calc(100vh - 56px);
+    padding:10px 8px calc(14px + env(safe-area-inset-bottom));
+  }
+  .navitem{padding:12px 11px;font-size:14px;border-radius:9px}
+  .side-foot{padding-bottom:10px}
+
+  .main{
+    padding:12px 10px calc(22px + env(safe-area-inset-bottom));
+    width:100%;
+  }
+  .page-head{
+    display:block;
+    margin-bottom:12px;
+  }
+  .page-head h2{font-size:20px;line-height:1.15}
+  .page-head p{font-size:13px;line-height:1.45}
+  .head-actions{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:8px;
+    margin-top:10px;
+  }
+  .head-actions .btn{width:100%;min-height:42px}
+
+  .card{border-radius:10px}
+  .card.pad{padding:13px}
+  .grid{gap:10px}
+  .metric{padding:11px 12px;border-radius:9px}
+  .metric b{font-size:15px}
+
+  .flex-between{
+    align-items:flex-start;
+    gap:10px;
+  }
+  .flex-between > .row-actions,
+  .list-card .row-actions{
+    width:100%;
+    justify-content:flex-start;
+    margin-top:8px;
+  }
+  .list-card{
+    padding:13px 12px;
+    overflow-wrap:anywhere;
+  }
+  .row-actions{
+    gap:7px;
+    justify-content:flex-start;
+    flex-wrap:wrap;
+  }
+  .row-actions .btn,
+  .row-actions button.btn{
+    min-height:36px;
+  }
+
+  .seg{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+  }
+  .seg.no-filter,
+  .scope-tabs,
+  .stock-summary-head .seg{
+    display:flex;
+    overflow-x:auto;
+    flex-wrap:nowrap;
+    padding-bottom:2px;
+    scrollbar-width:none;
+  }
+  .seg.no-filter::-webkit-scrollbar,
+  .scope-tabs::-webkit-scrollbar,
+  .stock-summary-head .seg::-webkit-scrollbar{display:none}
+  .seg button{
+    min-height:38px;
+    line-height:1.2;
+    text-align:center;
+  }
+  .seg.no-filter button,
+  .scope-tabs button,
+  .stock-summary-head .seg button{
+    flex:0 0 auto;
+    white-space:nowrap;
+  }
+
+  .sticky-bar{
+    top:56px;
+    margin-left:-10px;
+    margin-right:-10px;
+    padding:8px 10px;
+  }
+  .stock-summary-head{display:block}
+  .stat-row{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:7px;
+  }
+  .stat-row .card.stat{padding:8px 7px}
+  .stat .k{font-size:9px;line-height:1.15}
+  .stat .v{font-size:20px}
+
+  .searchbar{margin-bottom:12px}
+  .searchbar input{height:42px;font-size:16px;border-radius:9px}
+
+  .tablewrap{
+    border-radius:10px;
+    margin-left:0;
+    margin-right:0;
+  }
+  table{min-width:560px}
+  th,td{padding:9px 10px}
+  td .btn.tiny,
+  td .iconbtn{margin:2px 0}
+
+  .today-hero h3{font-size:22px}
+  .today-actions{gap:8px}
+  .today-action{
+    align-items:flex-start;
+    padding:12px;
+  }
+  .today-action .left{gap:10px}
+  .today-action .go{padding-top:3px}
+  .today-mini{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+
+  .modal-scrim{
+    align-items:flex-end;
+    padding:0;
+  }
+  .modal{
+    max-height:88vh;
+    border-radius:16px 16px 0 0;
+  }
+  .modal-head{
+    padding:14px 14px 10px;
+  }
+  .modal-head h3{font-size:18px;line-height:1.2}
+  .modal-body{padding:14px}
+  .modal-foot{
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .modal-foot .btn{
+    flex:1 1 140px!important;
+    min-height:42px;
+  }
+  .frow{display:block}
+
+  .notif-panel{
+    left:0;
+    right:0;
+    bottom:0;
+    top:auto;
+    width:100%;
+    max-width:none;
+    border-radius:16px 16px 0 0;
+  }
+  #toast{
+    width:calc(100vw - 24px);
+    justify-content:center;
+    text-align:center;
+    bottom:calc(14px + env(safe-area-inset-bottom));
+  }
+}
+
+@media(max-width:380px){
+  .main{padding-left:8px;padding-right:8px}
+  .topbar{gap:5px;padding-left:7px;padding-right:7px}
+  .tb-title{font-size:13px}
+  .bell{width:32px;height:32px;flex-basis:32px}
+  .hamb{width:34px;height:34px}
+  .seg{grid-template-columns:1fr}
+  .stat-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  table{min-width:520px}
+}
 </style>
   <!-- Supabase SDK loads dynamically when needed -->
 </head>
@@ -1498,7 +1731,7 @@ async function verifyOwnerCheckout(){
     const res=await fetch('/api/verify-checkout-session?session_id='+encodeURIComponent(sessionId));
     const data=await res.json().catch(()=>({}));
     if(!res.ok||!data.ok)return{ok:false,error:data.error||'Subscription is not active yet.'};
-    OWNER_CHECKOUT=Object.assign({session_id:sessionId},data);
+    OWNER_CHECKOUT=Object.assign({ok:true,session_id:sessionId},data);
     return{ok:true,data:OWNER_CHECKOUT};
   }catch(error){
     return{ok:false,error:'Could not verify the subscription yet.'};
@@ -1559,6 +1792,7 @@ function showRegister(push=true){
   const btn=$('#regBtn');
 
   setRegisterMode('create');
+  REGISTER_MODE='staff';
   const tag=$('#register .tag');if(tag)tag.textContent='Create staff account';
   const estLabel=$('#regEstField label');if(estLabel)estLabel.textContent='Staff invite code';
   const estInput=$('#regEst');if(estInput)estInput.placeholder='e.g. STO-AB12CD';
@@ -1587,6 +1821,7 @@ async function showOwnerSignup(push=true){
   REGISTER_MODE='owner';
   const modeField=$('#regModeField');if(modeField)modeField.style.display='none';
   setRegisterMode('create');
+  REGISTER_MODE='owner';
   const tag=$('#register .tag');if(tag)tag.textContent='Create owner account';
   const sub=$('#regSub');if(sub)sub.textContent='Your subscription is active. Create the owner account for this business.';
   const usernameF=$('#regUsernameField');if(usernameF)usernameF.style.display='none';
@@ -1634,6 +1869,7 @@ window.addEventListener('popstate',e=>{
   const view=(e.state&&e.state.publicView)||location.hash.replace('#','')||'landing';
   if(view==='login')showLogin(false);
   else if(view==='register')showRegister(false);
+  else if(view==='owner-signup')showOwnerSignup(false);
   else if(view==='forgot')showForgotPassword(false);
   else showLanding(false);
 });
@@ -1641,6 +1877,7 @@ const firstPublicView=location.hash.replace('#','')||'landing';
 replacePublicState(firstPublicView);
 if(firstPublicView==='login')showLogin(false);
 else if(firstPublicView==='register')showRegister(false);
+else if(firstPublicView==='owner-signup')showOwnerSignup(false);
 else if(firstPublicView==='forgot')showForgotPassword(false);
 async function findBusinessForStaffSignup(businessName){
   if(!USE_SUPABASE||!businessName)return{match:null,error:null};
@@ -1693,6 +1930,64 @@ async function doRegister(){
   $('#regMsg').textContent='Creating your account\u2026';
   $('#regBtn').disabled=true;
   await loadSupabaseSDK();
+  if(REGISTER_MODE==='owner'){
+    if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
+    const checked=OWNER_CHECKOUT?.ok?{ok:true,data:OWNER_CHECKOUT}:await verifyOwnerCheckout();
+    if(!checked.ok){$('#regMsg').textContent=checked.error||'Subscription must be active before creating an owner account.';$('#regBtn').disabled=false;return;}
+    const paid=checked.data||OWNER_CHECKOUT||{};
+    const sign=await sbSignUp(email,pass,{name,role:'boss',business_name:est,checkout_session_id:paid.session_id||'',stripe_customer_id:paid.customer_id||'',stripe_subscription_id:paid.subscription_id||''});
+    if(sign.error){
+      $('#regMsg').textContent=sign.error.message||'Could not create the owner login.';
+      $('#regBtn').disabled=false;
+      return;
+    }
+    const authId=sign.data?.user?.id||SUPABASE_USER?.id||'';
+    if(!authId){$('#regMsg').textContent='Owner login was created, but Supabase did not return a user id. Try signing in.';$('#regBtn').disabled=false;return;}
+    const newDb=blankDb(est);
+    const bossUser={id:'boss',name,username:email,role:'boss',email,authId};
+    newDb.users=[bossUser];
+    newDb.venue.name=est;
+    newDb.brand.appName=est;
+    ACTIVE_EST_ID='est_'+uid();
+    SUPABASE_USER=sign.data?.user||SUPABASE_USER;
+    DB=newDb;
+    localStorage.setItem(currentDbKey(),JSON.stringify(DB));
+    const currentPeriodEnd=paid.current_period_end?new Date(paid.current_period_end*1000).toISOString():null;
+    try{
+      const client=sb();
+      if(!client)throw new Error('Supabase not configured');
+      const payload={
+        id:ACTIVE_EST_ID,
+        owner_id:authId,
+        name:est,
+        data:dataWithoutPlainPasswords(DB),
+        updated_at:new Date().toISOString(),
+        subscription_status:paid.subscription_status||'active',
+        plan:'starter',
+        stripe_customer_id:paid.customer_id||null,
+        stripe_subscription_id:paid.subscription_id||null,
+        billing_email:email,
+        current_period_end:currentPeriodEnd,
+        billing_updated_at:new Date().toISOString()
+      };
+      const {error}=await client.from('establishments').insert(payload);
+      if(error)throw error;
+    }catch(e){
+      console.warn('Paid owner establishment save failed:',e);
+      $('#regMsg').textContent='Owner login created, but the business workspace could not be saved'+(e?.message?(' ('+e.message+')'):'')+'.';
+      $('#regBtn').disabled=false;
+      return;
+    }
+    const ests=getEstablishments().filter(e=>e.id!==ACTIVE_EST_ID);
+    ests.push({id:ACTIVE_EST_ID,name:est,createdAt:now()});
+    saveEstablishments(ests);
+    SESSION=bossUser;
+    $('#register').style.display='none';
+    $('#regBtn').disabled=false;
+    finalizeLogin();
+    toast('Welcome '+name+'! Your owner workspace is ready.','good');
+    return;
+  }
   const inviteLookup=await lookupStaffInvite(est);
   if(inviteLookup.error){
     $('#regMsg').textContent='Could not check that invite code. Run the updated supabase-security.sql, then try again.';
