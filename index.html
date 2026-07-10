@@ -1408,6 +1408,8 @@ function unsubscribeRealtime(){
 
 let SESSION=null;     // current user
 let SCOPE='kitchen';  // active scope for in-charge views / boss tabs
+let BILLING_ACCESS=null;
+let BILLING_BLOCKED=false;
 let CURRENT='today';
 let HIST_TAB='deliveries'; // active sub-tab on the merged History page
 let DELIV_SUBTAB='deliveries'; // active sub-tab on Deliveries page
@@ -1964,6 +1966,7 @@ async function doRegister(){
         updated_at:new Date().toISOString(),
         subscription_status:paid.subscription_status||'active',
         plan:'starter',
+        stripe_checkout_session_id:paid.session_id||null,
         stripe_customer_id:paid.customer_id||null,
         stripe_subscription_id:paid.subscription_id||null,
         billing_email:email,
@@ -2630,6 +2633,67 @@ function renderAuth(){
   $('#auth').style.display='flex';
   renderQuickRoles();
 }
+function clearBillingBlocker(){
+  BILLING_BLOCKED=false;
+  const blocker=document.getElementById('billingBlocker');
+  if(blocker)blocker.remove();
+}
+function showBillingBlocker(access){
+  BILLING_BLOCKED=true;
+  let blocker=document.getElementById('billingBlocker');
+  if(!blocker){
+    blocker=document.createElement('div');
+    blocker.id='billingBlocker';
+    blocker.style.cssText='position:fixed;inset:0;z-index:95;background:rgba(20,17,13,.72);display:flex;align-items:center;justify-content:center;padding:18px';
+    document.body.appendChild(blocker);
+  }
+  const status=access?.subscription_status||'inactive';
+  const isOwner=SESSION?.role==='boss'||access?.is_owner;
+  blocker.innerHTML='';
+  const card=el('div','card pad');
+  card.style.cssText='width:min(100%,430px);background:var(--card);box-shadow:0 18px 60px rgba(0,0,0,.28);text-align:center';
+  card.innerHTML=`<h3 style="font-size:24px;margin-bottom:8px">Subscription inactive</h3>
+    <div class="suptag" style="font-size:14px;line-height:1.6;margin-bottom:16px">
+      This business is currently <b>${esc(status)}</b>. Access is paused until the subscription is active again.
+    </div>`;
+  const actions=el('div','row-actions');
+  actions.style.cssText='justify-content:center;gap:10px;flex-wrap:wrap';
+  if(isOwner){
+    const renew=el('button','btn brass','Subscribe / renew');
+    renew.onclick=startSubscriptionCheckout;
+    actions.appendChild(renew);
+  }else{
+    card.appendChild(el('div','suptag','Ask the owner to update the subscription, then sign in again.'));
+  }
+  const out=el('button','btn ghost','Sign out');
+  out.onclick=logout;
+  actions.appendChild(out);
+  card.appendChild(actions);
+  blocker.appendChild(card);
+}
+async function enforceSubscriptionAccess(){
+  if(!USE_SUPABASE||!SUPABASE_USER||!ACTIVE_EST_ID){clearBillingBlocker();return true;}
+  try{
+    await loadSupabaseSDK();
+    const client=sb();if(!client)return true;
+    const {data,error}=await client.rpc('my_establishment_access',{est_id:ACTIVE_EST_ID});
+    if(error){
+      console.warn('Billing access check skipped:',error);
+      return true;
+    }
+    const access=Array.isArray(data)?data[0]:data;
+    BILLING_ACCESS=access||null;
+    if(access&&access.has_active_access===false){
+      showBillingBlocker(access);
+      return false;
+    }
+    clearBillingBlocker();
+    return true;
+  }catch(e){
+    console.warn('Billing access check failed:',e);
+    return true;
+  }
+}
 function finalizeLogin(){
   const systems=DB.systems||[];
   const branches=DB.branches||[];
@@ -2700,6 +2764,7 @@ function finalizeLogin(){
   applySavedSessionState(savedState);
   if(!appPageAllowed(CURRENT))CURRENT='today';
   saveSessionState();buildNav();renderBell();render();
+  enforceSubscriptionAccess();
   retryCloudSaveSoon('login');
   checkCutoffs();
   showLoginGreeting();
@@ -6474,6 +6539,12 @@ function editStaffModal(u,defaultBranchId){
   const body=el('div');
   const nameI=input(u.name||'','Full name');
   const userI=input(u.username||'','Username');
+  const emailView=input(u.email||'No email saved','');
+  emailView.type='email';
+  emailView.readOnly=true;
+  emailView.disabled=true;
+  emailView.style.background='var(--paper)';
+  emailView.style.color='var(--muted)';
   let passI=null,passWrap=null;
   if(!u.authRequired){
     passI=input('','New password (leave blank to keep)');passI.type='password';
@@ -6496,7 +6567,8 @@ function editStaffModal(u,defaultBranchId){
   buildSysSelect(userBranchId);
   branchI.onchange=()=>buildSysSelect(branchI.value);
   body.appendChild(field('Full name',nameI));
-  body.appendChild(field('Username',userI,'Used to log in. No spaces.'));
+  body.appendChild(field('Login email',emailView,'Locked. Staff and in-charge accounts keep the email they used when they joined.'));
+  body.appendChild(field('Username',userI,'Display/login label only. Supabase login uses the locked email.'));
   if(passWrap)body.appendChild(field('Password',passWrap));
   else body.appendChild(el('div','suptag','Password is managed by Supabase Auth. Use Forgot password on the login screen to reset it.'));
   body.appendChild(field('Role',roleI));
