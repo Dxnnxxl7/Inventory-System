@@ -988,7 +988,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.6';
+window.APP_VERSION='1.0.7';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -2697,14 +2697,41 @@ function showBillingBlocker(access){
   blocker.appendChild(card);
 }
 async function enforceSubscriptionAccess(){
-  if(!USE_SUPABASE||!SUPABASE_USER||!ACTIVE_EST_ID){clearBillingBlocker();return true;}
+  if(!USE_SUPABASE){clearBillingBlocker();return true;}
+  if(!SUPABASE_USER||!ACTIVE_EST_ID){
+    if(SESSION){
+      showBillingBlocker({
+        establishment_id:ACTIVE_EST_ID||'unknown',
+        subscription_status:'not_signed_in',
+        has_active_access:false,
+        is_owner:SESSION?.role==='boss'
+      });
+      return false;
+    }
+    clearBillingBlocker();return true;
+  }
   try{
     await loadSupabaseSDK();
-    const client=sb();if(!client)return true;
+    const client=sb();
+    if(!client){
+      showBillingBlocker({
+        establishment_id:ACTIVE_EST_ID,
+        subscription_status:'billing_check_failed',
+        has_active_access:false,
+        is_owner:SESSION?.role==='boss'
+      });
+      return false;
+    }
     const {data,error}=await client.rpc('my_establishment_access',{est_id:ACTIVE_EST_ID});
     if(error){
-      console.warn('Billing access check skipped:',error);
-      return true;
+      console.warn('Billing access check failed:',error);
+      showBillingBlocker({
+        establishment_id:ACTIVE_EST_ID,
+        subscription_status:'billing_check_failed',
+        has_active_access:false,
+        is_owner:SESSION?.role==='boss'
+      });
+      return false;
     }
     const access=Array.isArray(data)?data[0]:data;
     BILLING_ACCESS=access||null;
@@ -2721,7 +2748,13 @@ async function enforceSubscriptionAccess(){
     return true;
   }catch(e){
     console.warn('Billing access check failed:',e);
-    return true;
+    showBillingBlocker({
+      establishment_id:ACTIVE_EST_ID,
+      subscription_status:'billing_check_failed',
+      has_active_access:false,
+      is_owner:SESSION?.role==='boss'
+    });
+    return false;
   }
 }
 function finalizeLogin(){
@@ -3414,7 +3447,7 @@ function activeScope(){
 }
 function render(){
   closeNav();
-  if(USE_SUPABASE&&SESSION&&SUPABASE_USER&&ACTIVE_EST_ID){
+  if(USE_SUPABASE&&SESSION){
     enforceSubscriptionAccess();
     if(BILLING_BLOCKED)return;
   }
