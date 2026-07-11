@@ -988,7 +988,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.7';
+window.APP_VERSION='1.0.8';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -2012,7 +2012,7 @@ async function doRegister(){
     SESSION=bossUser;
     $('#register').style.display='none';
     $('#regBtn').disabled=false;
-    finalizeLogin();
+    await finalizeLogin();
     toast('Welcome '+name+'! Your owner workspace is ready.','good');
     return;
   }
@@ -2193,7 +2193,7 @@ async function doRegister(){
     }
     try{await sbSave();}catch(e){console.warn('Owner establishment cloud save failed:',e);$('#regMsg').textContent='Account made, but saving your establishment to the cloud failed'+(e?.message?(' ('+e.message+')'):'')+'. Check your Supabase tables.';$('#regBtn').disabled=false;return;}
     SESSION=bossUser;$('#register').style.display='none';$('#regBtn').disabled=false;
-    finalizeLogin();
+    await finalizeLogin();
     toast('Welcome '+name+'! Your business workspace is ready.','good');
   }else{
     // Branch exists — user joining a specific branch
@@ -2757,7 +2757,7 @@ async function enforceSubscriptionAccess(){
     return false;
   }
 }
-function finalizeLogin(){
+async function finalizeLogin(){
   const systems=DB.systems||[];
   const branches=DB.branches||[];
   // Boss/in-charge: pull pending requests from Supabase on login
@@ -2820,6 +2820,14 @@ function finalizeLogin(){
     BRANCH_TAB=userBranchId;
   }
   applyBrand();
+  if(USE_SUPABASE){
+    const ok=await enforceSubscriptionAccess();
+    if(!ok){
+      $('#auth').style.display='none';
+      $('#app').style.display='none';
+      return;
+    }
+  }
   const land=$('#landing');if(land)land.style.display='none';
   $('#auth').style.display='none';$('#app').style.display='block';
   if(USE_SUPABASE&&SUPABASE_USER)subscribeRealtime();
@@ -2827,7 +2835,6 @@ function finalizeLogin(){
   applySavedSessionState(savedState);
   if(!appPageAllowed(CURRENT))CURRENT='today';
   saveSessionState();buildNav();renderBell();render();
-  enforceSubscriptionAccess();
   retryCloudSaveSoon('login');
   checkCutoffs();
   showLoginGreeting();
@@ -2862,6 +2869,12 @@ async function finishSupabaseLogin(authUser,inputEmail){
     boss.email=inputEmail;boss.authId=authUser.id;delete boss.pass;delete boss.passHash;delete boss.passSalt;
     if(!DB.users.find(x=>x.id===boss.id))DB.users.push(boss);
     save();SESSION=boss;$('#authMsg').textContent='';
+    const ok=await enforceSubscriptionAccess();
+    if(!ok){
+      $('#auth').style.display='none';
+      $('#app').style.display='none';
+      return true;
+    }
     renderEstPicker(boss);
     return true;
   }
@@ -2882,7 +2895,7 @@ async function finishSupabaseLogin(authUser,inputEmail){
   }
   Object.assign(staff,{authId:authUser.id,authRequired:true,email:m.email||authUser.email,role:m.role||staff.role||'staff',scope:m.scope||staff.scope,branchId:m.branch_id||staff.branchId,pending:false});
   delete staff.pass;delete staff.passHash;delete staff.passSalt;
-  SESSION=staff;$('#authMsg').textContent='';finalizeLogin();
+  SESSION=staff;$('#authMsg').textContent='';await finalizeLogin();
   return true;
 }
 async function doLogin(){
@@ -2906,7 +2919,7 @@ async function doLogin(){
     if(!(await userPassMatches(localUser,pass))){$('#authMsg').textContent='Username or password is incorrect.';return;}
     if(localUser.pending){$('#authMsg').textContent='Your account is waiting for approval from the owner or in-charge.';return;}
     await migratePlainPassword(localUser,pass);
-    SESSION=localUser;finalizeLogin();return;
+    SESSION=localUser;await finalizeLogin();return;
   }
   // Email login → try Supabase Auth first (owner or approved staff)
   if(isEmail&&USE_SUPABASE){
