@@ -2708,8 +2708,13 @@ async function enforceSubscriptionAccess(){
     }
     const access=Array.isArray(data)?data[0]:data;
     BILLING_ACCESS=access||null;
-    if(access&&access.has_active_access===false){
-      showBillingBlocker(access);
+    if(!access||access.has_active_access!==true){
+      showBillingBlocker(access||{
+        establishment_id:ACTIVE_EST_ID,
+        subscription_status:'inactive',
+        has_active_access:false,
+        is_owner:SESSION?.role==='boss'
+      });
       return false;
     }
     clearBillingBlocker();
@@ -3409,6 +3414,10 @@ function activeScope(){
 }
 function render(){
   closeNav();
+  if(USE_SUPABASE&&SESSION&&SUPABASE_USER&&ACTIVE_EST_ID){
+    enforceSubscriptionAccess();
+    if(BILLING_BLOCKED)return;
+  }
   // Re-enable realtime when navigating away from settings
   if(CURRENT!=='settings'&&SUPPRESS_REALTIME){
     SUPPRESS_REALTIME=false;
