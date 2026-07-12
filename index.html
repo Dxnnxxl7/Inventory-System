@@ -991,7 +991,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.14';
+window.APP_VERSION='1.0.15';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -4926,6 +4926,7 @@ Move to designated cold storage immediately, then correct the temperature before
 function pageOrder(main){
   const scope=activeScope();
   const canMark=canEditStock();
+  const canAdd=canEditStock(scope);
   const draftBtn=el('button','btn ghost sm','Export draft PDF');
   draftBtn.onclick=()=>orderDraftModal(scope);
   main.appendChild(headEl(scopeLabel(scope),'Need to order',
@@ -4944,7 +4945,10 @@ function pageOrder(main){
 
   if(ORDER_SUBTAB==='upcoming'){
     const awaiting=activeItems(scope).filter(i=>i.qty<i.par&&i.ordered);
-    if(!awaiting.length){main.appendChild(emptyState('✅','Nothing upcoming right now.'));return;}
+    if(!awaiting.length){
+      main.appendChild(emptyState('✅','Nothing upcoming right now. Mark an item as ordered from the Need to order tab and it will appear here.'));
+      return;
+    }
     searchBar(main,'Search supplier or item…');
     main.appendChild(buildOrderTable(scope,awaiting,canMark,true));
     return;
@@ -4956,7 +4960,10 @@ function pageOrder(main){
   if(cleaned)save();
 
   const low=activeItems(scope).filter(i=>i.qty<i.par);
-  if(!low.length){main.appendChild(emptyState('\u2705','Nothing to order — every item is at or above min.'));return;}
+  if(!low.length){
+    main.appendChild(emptyState('\u2705','Nothing to order - every item is at or above min. If something should appear here, edit the stock item and set its Min / reorder level higher than the current On hand amount.',canAdd?'Open stocks':null,canAdd?()=>{CURRENT='stocks';STOCKS_SUBTAB='stocks';render();}:null));
+    return;
+  }
   const toOrder=low.filter(i=>!i.ordered);
   const awaiting=low.filter(i=>i.ordered);
 
@@ -4967,7 +4974,7 @@ function pageOrder(main){
     <div class="orderbar"><div class="orderbar-fill" style="width:${low.length?Math.round(awaiting.length/low.length*100):0}%"></div></div>`;
   main.appendChild(sum);
 
-  if(!toOrder.length){main.appendChild(emptyState('\u2705','Nothing left to order \u2014 check Upcoming for items on their way.'));return;}
+  if(!toOrder.length){main.appendChild(emptyState('\u2705','Nothing left to order - check Upcoming for items on their way.'));return;}
 
   searchBar(main,'Search supplier or item\u2026');
   main.appendChild(buildOrderTable(scope,toOrder,canMark,false));
@@ -4975,7 +4982,7 @@ function pageOrder(main){
 function buildOrderTable(scope,items,canMark,isOrdered){
   const tw=el('div','tablewrap');
   const t=el('table');
-  t.innerHTML=`<thead><tr>${canMark?'<th style="width:32px"></th>':''}<th>Item</th><th>Supplier</th><th>Category</th><th>On hand</th><th>Min</th><th>Order qty</th><th>Status</th></tr></thead>`;
+  t.innerHTML=`<thead><tr><th>Item</th><th>Supplier</th><th>Category</th><th>On hand</th><th>Min</th><th>Order qty</th><th>Status</th>${canMark?'<th>Action</th>':''}</tr></thead>`;
   const tb=el('tbody');
   items.forEach(i=>{
     const sup=supById(i.supplierId);
@@ -4988,7 +4995,6 @@ function buildOrderTable(scope,items,canMark,isOrdered){
       if(e)exp=`<span class="chip ${e.isToday?'ok':'warn'}" style="font-size:11px">Exp. ${e.label}</span>`;
     }
     let cells='';
-    if(canMark)cells+=`<td class="tickcell"></td>`;
     cells+=`<td><b>${esc(i.name)}</b></td>`;
     cells+=`<td>${sup?esc(sup.name):'<span class="suptag">\u2014</span>'}</td>`;
     cells+=`<td>${esc(i.category||'\u2014')}</td>`;
@@ -4996,6 +5002,7 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     cells+=`<td class="qty-cell">${i.par} ${esc(i.unit)}</td>`;
     cells+=`<td class="qty-cell orderqty-cell"></td>`;
     cells+=`<td>${isOrdered?`<span class="chip ok" style="font-size:11px">Ordered</span>${exp}`:'<span class="suptag">Pending</span>'}</td>`;
+    if(canMark)cells+=`<td class="order-action-cell"></td>`;
     tr.innerHTML=cells;
     const qtyWrap=el('div');qtyWrap.style.cssText='display:flex;align-items:center;gap:6px;min-width:120px';
     const qtyI=input(i.orderQty??sugg,'','number');
@@ -5012,10 +5019,14 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     qtyWrap.appendChild(qtyI);qtyWrap.appendChild(el('span','suptag',i.unit||''));
     tr.querySelector('.orderqty-cell').appendChild(qtyWrap);
     if(canMark){
-      const cb=el('input');cb.type='checkbox';cb.checked=!!i.ordered;cb.className='tick';
-      cb.title=isOrdered?'Untick to move back':'Tick once ordered';
-      cb.onchange=()=>{i.ordered=cb.checked;i.orderedOn=cb.checked?now():null;save();buildNav();render();toast(cb.checked?'Marked as ordered':'Moved back to order list');};
-      tr.querySelector('.tickcell').appendChild(cb);
+      const btn=el('button',isOrdered?'btn ghost tiny':'btn brass tiny',isOrdered?'Move back':'Mark ordered');
+      btn.onclick=()=>{
+        i.ordered=!isOrdered;
+        i.orderedOn=!isOrdered?now():null;
+        save();buildNav();render();
+        toast(!isOrdered?'Marked as ordered':'Moved back to order list','good');
+      };
+      tr.querySelector('.order-action-cell').appendChild(btn);
     }
     tb.appendChild(tr);
   });
