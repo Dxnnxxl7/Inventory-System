@@ -877,6 +877,9 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div style="text-align:center;margin-top:14px;font-size:13px;color:var(--muted)">
       Staff member? <button onclick="showRegister()" style="background:none;border:none;color:var(--brass);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">Create account with code</button>
     </div>
+    <div style="text-align:center;margin-top:10px;font-size:13px;color:var(--muted)">
+      <button onclick="showLanding(true)" style="background:none;border:none;color:var(--brass);font-size:13px;cursor:pointer;text-decoration:underline;font-family:inherit">Back to home</button>
+    </div>
     <div class="role-pills" id="quickRoles"></div>
     <div class="demo-note" id="demoNote"></div>
     <div style="text-align:center;margin-top:10px;font-size:10px;color:#b8ad9c" id="verTag"></div>
@@ -988,7 +991,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.12';
+window.APP_VERSION='1.0.13';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -2942,8 +2945,8 @@ function logout(){
   $('#forgotPassword').style.display='none';
   $('#loginPass').value='';
   $('#loginEmail').value='';
-  showLogin(false);
-  replacePublicState('login');
+  showLanding(false);
+  replacePublicState('landing');
   renderQuickRoles();
 }
 
