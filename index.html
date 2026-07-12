@@ -991,7 +991,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.16';
+window.APP_VERSION='1.0.19';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -3873,9 +3873,10 @@ function pageStocks(main){
       if(isHighlighted)tr.dataset.highlight='1';
       const expCell=!it.expiry?'<span class="suptag">—</span>':
         `${fmtDate(it.expiry)}${dleft!==null&&dleft<=EXPIRY_WARN_DAYS?`<div><span class="chip ${dleft<0?'bad':'warn'}">${dleft<0?'Expired':dleft===0?'Today':dleft+'d left'}</span></div>`:''}`;
+      const arrivedAt=currentBatchArrivedAt(it);
       const lastDeliv=DB.deliveries.filter(d=>d.lines.some(l=>l.itemId===it.id)).sort((a,b)=>b.ts-a.ts)[0];
       const invoiceCell=lastDeliv&&lastDeliv.invoice?`<span class="chip ok" style="font-size:11px">${esc(lastDeliv.invoice)}</span>`:'<span class="suptag">—</span>';
-      const arrivedCell=lastDeliv?fmtDate(lastDeliv.ts):'<span class="suptag">—</span>';
+      const arrivedCell=arrivedAt?fmtDate(arrivedAt):'<span class="suptag">—</span>';
       tr.innerHTML=`<td><b style="color:#111">${esc(it.name)}</b><span style="display:none">${esc(it.category)}</span></td>
         <td class="qty-cell" style="color:#111;font-weight:700">${it.qty} ${esc(it.unit)}</td>
         <td class="qty-cell" style="color:#111;font-weight:700">${it.par} ${esc(it.unit)}</td>
@@ -3947,6 +3948,17 @@ function syncDerivedExpiry(it){
   it.batches.sort((a,b)=>(a.expiry||'9999-99-99').localeCompare(b.expiry||'9999-99-99'));
   it.expiry=it.batches.length?it.batches[0].expiry:'';
 }
+function oldestActiveBatch(it){
+  const batches=(it&&it.batches?it.batches:[]).filter(b=>b.qty>0).slice();
+  batches.sort((a,b)=>(a.expiry||'9999-99-99').localeCompare(b.expiry||'9999-99-99'));
+  return batches[0]||null;
+}
+function currentBatchArrivedAt(it){
+  const batch=oldestActiveBatch(it);
+  if(batch&&batch.deliveredAt)return batch.deliveredAt;
+  const lastDeliv=DB.deliveries.filter(d=>d.lines.some(l=>l.itemId===it.id)).sort((a,b)=>b.ts-a.ts)[0];
+  return lastDeliv?lastDeliv.ts:null;
+}
 function addBatch(it,qty,expiry,deliveredAt){
   if(!it.batches)it.batches=[];
   if(qty>0&&expiry)it.batches.push({id:uid(),qty,expiry,deliveredAt:deliveredAt||now()});
@@ -4011,6 +4023,14 @@ function itemModal(scope,existing,startUnused){
   const spotI=input(d.spot||'','e.g. Walk-in, Shelf 3, Bar fridge');
   const tempI=input(d.temp,'°C',''); // temperature
   const expI=input(d.expiry||'','','date');
+  const hasDeliveryBatches=!!(existing&&existing.batches&&existing.batches.length);
+  const oldestBatch=hasDeliveryBatches?oldestActiveBatch(existing):null;
+  if(hasDeliveryBatches){
+    expI.disabled=true;
+    expI.style.background='var(--paper)';
+    expI.style.color='var(--muted)';
+    expI.title='This expiry came from delivery batches and cannot be edited here.';
+  }
   // storage segmented — dynamic, in-charge can add/remove custom types
   const seg=el('div','seg storage-seg');
   const segWrap=el('div');
@@ -4078,7 +4098,22 @@ function itemModal(scope,existing,startUnused){
   body.appendChild(addStoreSaveBtn);
   body.appendChild(tempField);
   body.appendChild(field('Storage spot (optional)',spotI,'Exactly where staff should put it — shown when they log a delivery.'));
-  body.appendChild(field('Expiration date',expI,existing?'Optional when editing. Delivery expiry dates are already saved on batches; only change this if you need to correct the oldest batch date.':'Required - when this first batch goes off. Future deliveries add their own batch.'));
+  if(hasDeliveryBatches){
+    const arrivedI=input(oldestBatch&&oldestBatch.deliveredAt?fmtDate(oldestBatch.deliveredAt):'','','text');
+    arrivedI.disabled=true;
+    arrivedI.style.background='var(--paper)';
+    arrivedI.style.color='var(--muted)';
+    arrivedI.title='This arrived date came from delivery batches and cannot be edited here.';
+    body.appendChild(field('Arrived from deliveries',arrivedI,'Locked. This date belongs to the same oldest batch as the expiry below.'));
+  }
+  body.appendChild(field(hasDeliveryBatches?'Expiry from deliveries':'Expiration date',expI,hasDeliveryBatches?'Locked. This is the oldest delivery batch. When that batch is used up, the stock screen will automatically show the next delivery expiry.':(existing?'Optional when editing manual stock with no delivery batches.':'Required - when this first batch goes off. Future deliveries add their own batch.')));
+  if(hasDeliveryBatches){
+    const batchNote=el('div','suptag');
+    batchNote.style.cssText='margin-top:-8px;margin-bottom:12px;line-height:1.5';
+    const batches=existing.batches.slice().sort((a,b)=>(a.expiry||'9999-99-99').localeCompare(b.expiry||'9999-99-99')).slice(0,3);
+    batchNote.textContent='Delivery batches: '+batches.map(b=>(b.qty||0)+' '+(d.unit||'unit')+' exp '+(b.expiry||'no date')).join(' | ')+(existing.batches.length>3?' | ...':'');
+    body.appendChild(batchNote);
+  }
   const fr1=el('div','frow');fr1.appendChild(field('On hand',qtyI));fr1.appendChild(field('Min / reorder level',parI));fr1.appendChild(field('Unit',unitI));
   body.appendChild(fr1);
   // for existing items, add a quick adjust quantity widget
@@ -4127,8 +4162,7 @@ function itemModal(scope,existing,startUnused){
       if(existing.supplierId!==rec.supplierId){const oldS=supById(existing.supplierId),newS=supById(rec.supplierId);changes.push(`Supplier changed from "${oldS?oldS.name:'none'}" to "${newS?newS.name:'none'}"`);}
       if(existing.qty!==newQty)changes.push(`On-hand qty set to ${newQty} ${rec.unit}`);
       Object.assign(existing,rec);
-      if(existing.batches&&existing.batches.length&&expI.value){
-        existing.batches[0].expiry=expI.value;
+      if(existing.batches&&existing.batches.length){
         syncDerivedExpiry(existing);
       }else if(!existing.batches||!existing.batches.length){
         addBatch(existing,newQty,expI.value,now());
@@ -4518,9 +4552,10 @@ function pageUnused(main,scope){
       tr.className=isExpired?'row-expired':'';
       const expCell=!it.expiry?'<span class="suptag">—</span>':
         `${fmtDate(it.expiry)}${dleft!==null&&dleft<=EXPIRY_WARN_DAYS?`<div><span class="chip ${dleft<0?'bad':'warn'}">${dleft<0?'Expired':dleft===0?'Today':dleft+'d left'}</span></div>`:''}`;
+      const arrivedAt=currentBatchArrivedAt(it);
       const lastDeliv=DB.deliveries.filter(d=>d.lines.some(l=>l.itemId===it.id)).sort((a,b)=>b.ts-a.ts)[0];
       const invoiceCell=lastDeliv&&lastDeliv.invoice?`<span class="chip ok" style="font-size:11px">${esc(lastDeliv.invoice)}</span>`:'<span class="suptag">—</span>';
-      const arrivedCell=lastDeliv?fmtDate(lastDeliv.ts):'<span class="suptag">—</span>';
+      const arrivedCell=arrivedAt?fmtDate(arrivedAt):'<span class="suptag">—</span>';
       tr.innerHTML=`<td><b style="color:#111">${esc(it.name)}</b><span style="display:none">${esc(it.category)}</span></td>
         <td class="qty-cell" style="color:#111;font-weight:700">${it.qty} ${esc(it.unit)}</td>
         <td class="qty-cell" style="color:#111;font-weight:700">${it.par} ${esc(it.unit)}</td>
@@ -4566,6 +4601,7 @@ function buildDeliveryTable(deliveries,showDelete,showArrived){
     const supName=sup?sup.name:'Direct / other';
     const isToday=fmtDate(d.ts)===fmtDate(Date.now());
     const canRemove=showDelete&&(canEditStock()||(SESSION.role==='staff'&&isToday));
+    const canEdit=showDelete&&(canEditStock()||(SESSION.role==='staff'&&isToday));
     d.lines.forEach((l,i)=>{
       const tr=el('tr');
       const invoiceCell=d.invoice?`<span class="chip ok" style="font-size:11px">${esc(d.invoice)}</span>`:'<span class="suptag">\u2014</span>';
@@ -4582,8 +4618,14 @@ function buildDeliveryTable(deliveries,showDelete,showArrived){
       if(showDelete){
         if(i===0){
           const td=el('td');td.setAttribute('rowspan',d.lines.length);td.style.verticalAlign='top';
+          if(canEdit){
+            const ed=el('button','btn ghost tiny','Edit');
+            ed.onclick=()=>editDeliveryModal(d);
+            td.appendChild(ed);
+          }
           if(canRemove){
             const rm=el('button','btn ghost tiny','Remove');
+            rm.style.marginLeft='6px';
             rm.onclick=()=>confirmModal('Remove this delivery?','This reverses the stock it added. Can\'t be undone.',()=>removeDelivery(d));
             td.appendChild(rm);
           }
@@ -4595,9 +4637,7 @@ function buildDeliveryTable(deliveries,showDelete,showArrived){
   });
   t.appendChild(tb);tw.appendChild(t);return tw;
 }
-function removeDelivery(d){
-  // reverse the stock this delivery added for known items, including the
-  // specific batch it created (matched by expiry+qty, the line's actual content)
+function reverseDeliveryStock(d){
   d.lines.forEach(l=>{
     if(!l.itemId)return;
     const it=itemById(l.itemId);if(!it)return;
@@ -4606,17 +4646,88 @@ function removeDelivery(d){
       const match=it.batches.find(b=>b.expiry===l.expiry&&b.qty===(+l.qty||0));
       if(match)match.qty=0;
       else{
-        // exact match not found (e.g. batch already partly used) — trim from
-        // whichever batch shares this expiry date so the total stays correct
         const sameDate=it.batches.find(b=>b.expiry===l.expiry&&b.qty>0);
         if(sameDate)sameDate.qty=Math.max(sameDate.qty-(+l.qty||0),0);
       }
       syncDerivedExpiry(it);
+    }else{
+      syncDerivedExpiry(it);
     }
   });
+}
+function applyDeliveryStock(d){
+  d.lines.forEach(l=>{
+    if(!l.itemId)return;
+    const it=itemById(l.itemId);if(!it)return;
+    it.qty+=(+l.qty||0);
+    if(l.expiry)addBatch(it,+l.qty||0,l.expiry,d.ts||now());
+    it.store=l.store||it.store;
+    if(it.store!=='dry'&&l.temp!==undefined)it.temp=l.temp;
+  });
+}
+function removeDelivery(d){
+  // reverse the stock this delivery added for known items, including the
+  // specific batch it created (matched by expiry+qty, the line's actual content)
+  reverseDeliveryStock(d);
   DB.deliveries=DB.deliveries.filter(x=>x.id!==d.id);
   logAudit('Delivery removed',`${d.lines.length} line${d.lines.length===1?'':'s'} reversed${d.invoice?' · invoice '+d.invoice:''}`,d.scope);
   save();buildNav();render();toast('Delivery removed · stock reversed','good');
+}
+function editDeliveryModal(d){
+  const body=el('div');
+  const supI=selectEl([{label:'— direct / other —',value:''},...DB.suppliers.map(s=>({label:s.name,value:s.id}))],d.supplierId||'');
+  const invI=input(d.invoice||'','Invoice number');
+  const dateI=input(new Date(d.ts||now()).toISOString().slice(0,10),'','date');
+  body.appendChild(field('Supplier',supI));
+  body.appendChild(field('Invoice number',invI,'Required.'));
+  body.appendChild(field('Arrived date',dateI,'Changes the delivery record and batch arrived date.'));
+  body.appendChild(el('div','nav-group-label','Lines'));
+  const lineControls=[];
+  d.lines.forEach((line,idx)=>{
+    const row=el('div','card pad');row.style.marginBottom='10px';
+    row.innerHTML='<b>'+esc(line.name||('Line '+(idx+1)))+'</b><div class="suptag" style="margin-bottom:10px">'+(line.itemId?'Stock-linked line':'Record-only line')+'</div>';
+    const qtyI=input(line.qty||0,'','number');
+    const unitI=input(line.unit||'unit','Unit');
+    const tempI=input(line.temp||'','°C','number');
+    const expI=input(line.expiry||'','','date');
+    const fr=el('div','frow');
+    fr.appendChild(field('Qty received',qtyI));
+    fr.appendChild(field('Unit',unitI));
+    row.appendChild(fr);
+    row.appendChild(field('Temperature',tempI,'Use for cold/freezer deliveries.'));
+    row.appendChild(field('Expiry',expI,'Delivery expiry for this batch.'));
+    body.appendChild(row);
+    lineControls.push({line,qtyI,unitI,tempI,expI});
+  });
+  const err=el('div','err');body.appendChild(err);
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.style.flex='1';cancel.onclick=closeModal;
+  const saveBtn=el('button','btn brass','Save delivery');saveBtn.style.flex='2';
+  saveBtn.onclick=()=>{
+    if(!invI.value.trim()){err.textContent='Invoice number is required.';return;}
+    if(!dateI.value){err.textContent='Arrived date is required.';return;}
+    for(const c of lineControls){
+      if((+c.qtyI.value||0)<=0){err.textContent='Each line needs a quantity above zero.';return;}
+      if(!c.expI.value){err.textContent='Each line needs an expiry date.';return;}
+      if(c.expI.value<dateI.value){err.textContent='Expiry cannot be before the arrived date.';return;}
+    }
+    const oldSummary=d.lines.map(l=>`${l.name}: ${l.qty} ${l.unit}`).join(', ');
+    reverseDeliveryStock(d);
+    d.supplierId=supI.value;
+    d.invoice=invI.value.trim();
+    d.ts=new Date(dateI.value+'T12:00:00').getTime();
+    lineControls.forEach(c=>{
+      c.line.qty=+c.qtyI.value||0;
+      c.line.unit=c.unitI.value.trim()||c.line.unit||'unit';
+      c.line.temp=c.tempI.value;
+      c.line.expiry=c.expI.value;
+    });
+    applyDeliveryStock(d);
+    logAudit('Delivery edited',`${oldSummary} -> ${d.lines.map(l=>`${l.name}: ${l.qty} ${l.unit}`).join(', ')}${d.invoice?' · invoice '+d.invoice:''}`,d.scope);
+    save();closeModal();buildNav();render();toast('Delivery updated','good');
+  };
+  foot.appendChild(cancel);foot.appendChild(saveBtn);
+  openModal('Edit delivery',body,foot);
 }
 function deliveryModal(scope){
   let delivScope=scope;
@@ -5207,6 +5318,11 @@ function renderOrderDraftPDF(scope,mode,note,deliveryDate,message){
 
 /* ---------- DAILY USAGE ---------- */
 function deleteUsage(u){
+  restoreUsageStock(u);
+  DB.usage=DB.usage.filter(x=>x.id!==u.id);
+  save();buildNav();render();toast('Entry deleted · stock restored','good');
+}
+function restoreUsageStock(u){
   if(u.itemId){
     const it=itemById(u.itemId);
     if(it){
@@ -5217,8 +5333,50 @@ function deleteUsage(u){
       if(q>0&&u.expiry)addBatch(it,q,u.expiry,u.ts||now());
     }
   }
-  DB.usage=DB.usage.filter(x=>x.id!==u.id);
-  save();buildNav();render();toast('Entry deleted · stock restored','good');
+}
+function applyUsageStock(u,newQty){
+  const it=u.itemId?itemById(u.itemId):null;
+  if(!it)return{ok:true,expiry:u.expiry||''};
+  const q=+newQty||0;
+  if(q<=0)return{ok:false,error:'Enter an amount above zero.'};
+  if(q>it.qty)return{ok:false,error:`Can't log more than what is on hand - ${it.name} only has ${it.qty} ${it.unit}.`};
+  const drawnFrom=it.batches&&it.batches.length?it.batches[0].expiry:'';
+  it.qty=Math.max(it.qty-q,0);
+  deductBatchesFIFO(it,q);
+  return{ok:true,expiry:drawnFrom};
+}
+function editUsageModal(u){
+  const body=el('div');
+  const qtyI=input(u.qty||0,'','number');
+  const dateI=input(u.date||todayISO(),'','date');
+  const timeI=input(new Date(u.ts||now()).toTimeString().slice(0,5),'','time');
+  body.innerHTML='<div class="suptag" style="margin-bottom:12px"><b>'+esc(u.name)+'</b> · '+esc(u.unit||'unit')+'</div>';
+  body.appendChild(field('Quantity used',qtyI));
+  const row=el('div','frow');row.appendChild(field('Date',dateI));row.appendChild(field('Time',timeI));body.appendChild(row);
+  const err=el('div','err');body.appendChild(err);
+  const foot=el('div');foot.style.cssText='display:flex;gap:10px;width:100%';
+  const cancel=el('button','btn ghost','Cancel');cancel.style.flex='1';cancel.onclick=closeModal;
+  const saveBtn=el('button','btn brass','Save usage');saveBtn.style.flex='2';
+  saveBtn.onclick=()=>{
+    if(!dateI.value){err.textContent='Date is required.';return;}
+    if(!timeI.value){err.textContent='Time is required.';return;}
+    const oldQty=u.qty;
+    restoreUsageStock(u);
+    const result=applyUsageStock(u,qtyI.value);
+    if(!result.ok){
+      applyUsageStock(u,oldQty);
+      err.textContent=result.error;
+      return;
+    }
+    u.qty=+qtyI.value||0;
+    u.expiry=result.expiry;
+    u.date=dateI.value;
+    u.ts=new Date(dateI.value+'T'+timeI.value+':00').getTime();
+    logAudit('Usage edited',`${u.name}: ${oldQty} ${u.unit} -> ${u.qty} ${u.unit}`,u.scope);
+    save();closeModal();buildNav();render();toast('Usage updated','good');
+  };
+  foot.appendChild(cancel);foot.appendChild(saveBtn);
+  openModal('Edit daily usage',body,foot);
 }
 function pageUsage(main){
   const scope=activeScope();
@@ -5241,8 +5399,12 @@ function pageUsage(main){
       const tr=el('tr');
       const arr=u.itemId?lastArrivalFor(u.itemId,SESSION.scope||'kitchen',u.ts):null;
       tr.innerHTML=`<td>${esc(u.name)}</td><td class="qty-cell">${u.qty} ${esc(u.unit)}</td><td>${esc(u.byName)}${roleTag(u)?`<div class="suptag">${esc(roleTag(u))}</div>`:''}</td><td>${fmtTime(u.ts)}</td><td>${arr?fmtDate(arr.ts):'<span class="suptag">—</span>'}</td><td>${u.expiry?fmtDate(u.expiry):'<span class="suptag">—</span>'}</td><td class="dna-cell"></td>`;
-      if(u.byId===SESSION.id){
+      if(u.byId===SESSION.id||canEditStock(scope)){
+        const ed=el('button','btn ghost tiny','Edit');
+        ed.onclick=()=>editUsageModal(u);
+        tr.querySelector('.dna-cell').appendChild(ed);
         const rm=el('button','btn ghost tiny','Delete');
+        rm.style.marginLeft='6px';
         rm.onclick=()=>confirmModal('Delete this entry?','This puts the quantity back into stock and removes the record. This can’t be undone.',()=>deleteUsage(u));
         tr.querySelector('.dna-cell').appendChild(rm);
       }
