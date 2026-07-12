@@ -991,7 +991,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.13';
+window.APP_VERSION='1.0.14';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -7487,6 +7487,26 @@ function settingsAccount(main){
     pwc.appendChild(pOk);
   }
   main.appendChild(pwc);
+  if(SESSION.role==='boss'){
+    const bc=el('div','card pad');bc.style.marginBottom='12px';
+    const status=(BILLING_ACCESS&&BILLING_ACCESS.subscription_status)||DB.subscription_status||'active';
+    const active=(BILLING_ACCESS&&BILLING_ACCESS.has_active_access===true)||status==='active';
+    bc.innerHTML=`<div class="flex-between" style="gap:12px;align-items:flex-start">
+      <div><b>Subscription</b><div class="suptag" style="margin-top:6px;line-height:1.6">Manage or cancel your PayPal subscription. If you cancel, access pauses after PayPal confirms the cancellation.</div></div>
+      <span class="chip ${active?'ok':'warn'}" style="font-size:11px">${esc(status)}</span>
+    </div>`;
+    const actions=el('div','row-actions');actions.style.marginTop='12px';
+    const unsub=el('button','btn danger sm','Unsubscribe');
+    unsub.onclick=()=>{
+      window.open('https://www.paypal.com/myaccount/autopay/','_blank','noopener');
+      toast('Opening PayPal automatic payments','good');
+    };
+    const help=el('button','btn ghost sm','How to cancel');
+    help.onclick=()=>alert('In PayPal: open Automatic payments, choose Stored, then cancel the subscription. Your app access will pause after PayPal sends the cancellation update.');
+    actions.appendChild(unsub);actions.appendChild(help);
+    bc.appendChild(actions);
+    main.appendChild(bc);
+  }
   // Supabase email — boss only, shows when Supabase is configured
   if(SESSION.role==='boss'&&USE_SUPABASE){
     const sbc=el('div','card pad');
