@@ -70,6 +70,29 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
 .land-points{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;max-width:620px}
 .land-point{border-top:1px solid var(--line);padding-top:10px;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--muted)}
 .land-point b{display:block;color:var(--ink);font-size:14px;margin-bottom:2px}
+.land-section{
+  width:100%;max-width:1180px;margin:0 auto;padding:10px 28px 54px;
+}
+.land-section-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:18px}
+.land-section-head h2{font-size:34px;line-height:1.05;letter-spacing:0}
+.land-section-head p{font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;color:var(--muted);line-height:1.5;max-width:520px;margin:0}
+.land-panel-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.land-panel{
+  border:1px solid var(--line);border-radius:14px;background:#fffdf8;padding:20px;box-shadow:0 10px 34px rgba(20,17,13,.08);
+}
+.land-panel h3{font-size:22px;margin-bottom:8px;letter-spacing:0}
+.land-panel p,.land-panel li{font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;color:var(--muted);line-height:1.55;font-size:14px}
+.land-panel ul{margin:12px 0 0;padding-left:18px}
+.announce-list{display:grid;gap:10px;margin-top:14px}
+.announce-item{border-top:1px solid var(--line);padding-top:12px}
+.announce-item b{display:block;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:14px;color:var(--ink);margin-bottom:3px}
+.feedback-form{display:grid;gap:10px;margin-top:14px}
+.feedback-form input,.feedback-form textarea{
+  width:100%;border:1px solid var(--line);border-radius:10px;background:#fff;padding:11px 12px;color:var(--ink);outline:none;
+}
+.feedback-form textarea{min-height:112px;resize:vertical}
+.feedback-form input:focus,.feedback-form textarea:focus{border-color:var(--brass)}
+.feedback-note{min-height:18px;font-family:'Avenir Next','Segoe UI',system-ui,sans-serif;font-size:13px;color:var(--muted)}
 .product-shot{
   position:relative;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 18px 60px rgba(20,17,13,.14);
   width:100%;min-width:0;padding:16px;overflow:hidden;min-height:520px;
@@ -114,6 +137,11 @@ h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.01em}
   .land-copy p{font-size:16px}
   .land-ctas .btn{width:100%;justify-content:center}
   .land-points{grid-template-columns:1fr}
+  .land-section{padding:4px 12px 34px}
+  .land-section-head{display:block}
+  .land-section-head h2{font-size:28px;margin-bottom:8px}
+  .land-panel-grid{grid-template-columns:1fr}
+  .land-panel{padding:16px}
   .product-shot{margin-top:22px;min-height:0;padding:12px;border-radius:14px;box-shadow:0 10px 28px rgba(20,17,13,.1)}
   .shot-title div{font-size:11px;line-height:1.25}
   .shot-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch;padding-bottom:2px}
@@ -801,6 +829,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <div><b>Stored</b><span>Know what you have, before you need it.</span></div>
     </div>
     <div class="land-actions">
+      <button class="btn ghost sm" type="button" onclick="document.getElementById('landingUpdates')?.scrollIntoView({behavior:'smooth'})">Updates</button>
       <button class="btn brass sm" type="button" onclick="startSubscriptionCheckout()">Subscribe</button>
     </div>
   </header>
@@ -840,6 +869,43 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
         <div class="shot-row"><span>Freezer check</span><span class="shot-chip">Logged</span></div>
       </div>
       <div class="shot-phone"><div class="mini"><b>Need to order</b><div class="mini-line"></div><div class="mini-line short"></div><div class="mini-line"></div><div class="mini-line short"></div></div></div>
+    </div>
+  </section>
+  <section class="land-section" id="landingUpdates">
+    <div class="land-section-head">
+      <h2>Updates and feedback</h2>
+      <p>Customers can see what is new before signing in, and they have a simple place to send questions, issues or feature requests.</p>
+    </div>
+    <div class="land-panel-grid">
+      <div class="land-panel">
+        <h3>Announcements</h3>
+        <p>Use this space for launch notes, maintenance notices and important customer updates.</p>
+        <div class="announce-list">
+          <div class="announce-item">
+            <b>Stored subscriptions are live</b>
+            <p>Owners can subscribe, create a clean business workspace and invite staff with codes.</p>
+          </div>
+          <div class="announce-item">
+            <b>Staff data stays separated by business</b>
+            <p>Each owner has their own establishment, branches and team records.</p>
+          </div>
+          <div class="announce-item">
+            <b>Need help?</b>
+            <p>Send feedback below and the message will open in your email app.</p>
+          </div>
+        </div>
+      </div>
+      <div class="land-panel">
+        <h3>Send feedback</h3>
+        <p>Tell us what happened, what you expected, or what would make Stored better for your team.</p>
+        <div class="feedback-form">
+          <input id="landFeedbackName" placeholder="Your name">
+          <input id="landFeedbackEmail" type="email" placeholder="Your email">
+          <textarea id="landFeedbackMessage" placeholder="Write your feedback..."></textarea>
+          <button class="btn brass" type="button" onclick="sendLandingFeedback()">Send feedback</button>
+          <div class="feedback-note" id="landFeedbackNote"></div>
+        </div>
+      </div>
     </div>
   </section>
 </div>
@@ -990,9 +1056,31 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.21';
+window.APP_VERSION='1.0.23';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
+function sendLandingFeedback(){
+  const name=($('#landFeedbackName')?.value||'').trim();
+  const email=($('#landFeedbackEmail')?.value||'').trim();
+  const message=($('#landFeedbackMessage')?.value||'').trim();
+  const note=$('#landFeedbackNote');
+  if(!message){
+    if(note)note.textContent='Write a short message first.';
+    return;
+  }
+  const to=(DB&&DB.support&&DB.support.email)||SUPPORT_DEFAULTS.email;
+  const subject='Stored customer feedback';
+  const body=[
+    'Name: '+(name||'Not provided'),
+    'Email: '+(email||'Not provided'),
+    '',
+    message,
+    '',
+    'Sent from: '+location.href.split('#')[0]
+  ].join('\n');
+  if(note)note.textContent='Opening your email app...';
+  location.href='mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+}
 const DEMO_DATA_ENABLED=false;
 // Show build version on the login screen so deploys are instantly verifiable.
 document.addEventListener('DOMContentLoaded',()=>{const t=document.getElementById('verTag');if(t)t.textContent='v'+APP_VERSION;});
@@ -2944,8 +3032,8 @@ function logout(){
   $('#forgotPassword').style.display='none';
   $('#loginPass').value='';
   $('#loginEmail').value='';
-  showLanding(false);
-  replacePublicState('landing');
+  showLogin(false);
+  replacePublicState('login');
   renderQuickRoles();
 }
 
@@ -2988,7 +3076,12 @@ applyBrand();renderQuickRoles();applyPublicTitle();
     if(USE_SUPABASE){
       sessionStorage.removeItem('stockline_session');
       localStorage.removeItem('stockline_session');
-      showLogin(false);
+      const publicView=location.hash.replace('#','')||'landing';
+      if(publicView==='login')showLogin(false);
+      else if(publicView==='register')showRegister(false);
+      else if(publicView==='owner-signup')showOwnerSignup(false);
+      else if(publicView==='forgot')showForgotPassword(false);
+      else showLanding(false);
       return;
     }
     const saved=sessionStorage.getItem('stockline_session')||localStorage.getItem('stockline_session');
@@ -3017,7 +3110,7 @@ applyBrand();renderQuickRoles();applyPublicTitle();
       }else{
         sessionStorage.removeItem('stockline_session');
         localStorage.removeItem('stockline_session');
-        showLogin(false);
+        showLanding(false);
       }
     }
   }catch(e){
