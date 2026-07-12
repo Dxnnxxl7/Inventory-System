@@ -991,7 +991,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.15';
+window.APP_VERSION='1.0.16';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -4078,7 +4078,7 @@ function itemModal(scope,existing,startUnused){
   body.appendChild(addStoreSaveBtn);
   body.appendChild(tempField);
   body.appendChild(field('Storage spot (optional)',spotI,'Exactly where staff should put it — shown when they log a delivery.'));
-  body.appendChild(field('Expiration date',expI,existing?'Soonest batch on hand. New deliveries add their own batch — older dates run out first.':'Required — when this first batch goes off. Future deliveries add their own batch.'));
+  body.appendChild(field('Expiration date',expI,existing?'Optional when editing. Delivery expiry dates are already saved on batches; only change this if you need to correct the oldest batch date.':'Required - when this first batch goes off. Future deliveries add their own batch.'));
   const fr1=el('div','frow');fr1.appendChild(field('On hand',qtyI));fr1.appendChild(field('Min / reorder level',parI));fr1.appendChild(field('Unit',unitI));
   body.appendChild(fr1);
   // for existing items, add a quick adjust quantity widget
@@ -4113,7 +4113,7 @@ function itemModal(scope,existing,startUnused){
     }
     if((store==='freezer'||store==='cold')&&String(tempI.value).trim()===''){errEl.textContent='Temperature is required for this storage type. It won’t save until this is filled.';return;}
     if((store==='freezer'||store==='cold')&&!Number.isFinite(+tempI.value)){errEl.textContent='Enter a valid number for temperature.';return;}
-    if(!expI.value){errEl.textContent='Expiration date is required. It won’t save until this is filled.';return;}
+    if(!existing&&!expI.value){errEl.textContent='Expiration date is required for a new manual stock item. Deliveries save their own expiry dates.';return;}
     const newQty=+qtyI.value||0;
     const rec={
       name,category,store,unit:unitI.value.trim()||'unit',
@@ -4127,11 +4127,13 @@ function itemModal(scope,existing,startUnused){
       if(existing.supplierId!==rec.supplierId){const oldS=supById(existing.supplierId),newS=supById(rec.supplierId);changes.push(`Supplier changed from "${oldS?oldS.name:'none'}" to "${newS?newS.name:'none'}"`);}
       if(existing.qty!==newQty)changes.push(`On-hand qty set to ${newQty} ${rec.unit}`);
       Object.assign(existing,rec);
-      if(existing.batches&&existing.batches.length){
+      if(existing.batches&&existing.batches.length&&expI.value){
         existing.batches[0].expiry=expI.value;
         syncDerivedExpiry(existing);
-      }else{
+      }else if(!existing.batches||!existing.batches.length){
         addBatch(existing,newQty,expI.value,now());
+      }else{
+        syncDerivedExpiry(existing);
       }
       if(changes.length)logAudit('Item edited',`${name}: ${changes.join('; ')}`,scope);
       toast('Item updated','good');
