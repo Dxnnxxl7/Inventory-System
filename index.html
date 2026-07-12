@@ -801,7 +801,6 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <div><b>Stored</b><span>Know what you have, before you need it.</span></div>
     </div>
     <div class="land-actions">
-      <button class="btn ghost sm" type="button" onclick="showLogin()">Sign in</button>
       <button class="btn brass sm" type="button" onclick="startSubscriptionCheckout()">Subscribe</button>
     </div>
   </header>
@@ -811,7 +810,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       <p>Stored gives owners, in-charge staff and teams one clean place to track stock, deliveries, cut-offs, wastage, temperature checks and branch operations.</p>
       <div class="land-ctas">
         <button class="btn brass" type="button" onclick="startSubscriptionCheckout()">Subscribe as owner</button>
-        <button class="btn ghost" type="button" onclick="showRegister()">Create staff account</button>
+        <button class="btn ghost" type="button" onclick="showLogin()">Sign in</button>
       </div>
       <div class="land-points">
         <div class="land-point"><b>Know what is low</b>Live stock status before service starts.</div>
@@ -991,7 +990,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.19';
+window.APP_VERSION='1.0.21';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 const DEMO_DATA_ENABLED=false;
@@ -5120,15 +5119,22 @@ function buildOrderTable(scope,items,canMark,isOrdered){
     const qtyWrap=el('div');qtyWrap.style.cssText='display:flex;align-items:center;gap:6px;min-width:120px';
     const qtyI=input(i.orderQty??sugg,'','number');
     qtyI.min='0';qtyI.step='any';qtyI.style.cssText='width:76px;padding:8px 9px;border-radius:8px';
-    qtyI.onchange=()=>{
-      const val=parseFloat(qtyI.value);
-      const old=i.orderQty??sugg;
-      if(Number.isFinite(val)&&val>=0)i.orderQty=val;
-      else{delete i.orderQty;qtyI.value=sugg;}
-      logAudit('Order quantity changed',`${i.name}: ${old} ${i.unit} -> ${i.orderQty??sugg} ${i.unit}`,i.scope);
-      save();
-      toast('Order quantity updated','good');
-    };
+    if(!canMark){
+      qtyI.disabled=true;
+      qtyI.style.background='var(--paper)';
+      qtyI.style.color='var(--muted)';
+      qtyI.title='Only owner or in-charge can edit order quantity.';
+    }else{
+      qtyI.onchange=()=>{
+        const val=parseFloat(qtyI.value);
+        const old=i.orderQty??sugg;
+        if(Number.isFinite(val)&&val>=0)i.orderQty=val;
+        else{delete i.orderQty;qtyI.value=sugg;}
+        logAudit('Order quantity changed',`${i.name}: ${old} ${i.unit} -> ${i.orderQty??sugg} ${i.unit}`,i.scope);
+        save();
+        toast('Order quantity updated','good');
+      };
+    }
     qtyWrap.appendChild(qtyI);qtyWrap.appendChild(el('span','suptag',i.unit||''));
     tr.querySelector('.orderqty-cell').appendChild(qtyWrap);
     if(canMark){
