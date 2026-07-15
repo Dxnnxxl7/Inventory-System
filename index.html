@@ -843,7 +843,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
       </div>
       <div class="land-points">
         <div class="land-point"><b>Know what is low</b>Live stock status before service starts.</div>
-        <div class="land-point"><b>Keep teams aligned</b>Roles, approvals and messages by branch.</div>
+        <div class="land-point"><b>Keep teams aligned</b>Roles, approvals and messages for one subscribed location.</div>
         <div class="land-point"><b>Track the boring bits</b>Deliveries, temps, usage and history in one place.</div>
       </div>
     </div>
@@ -887,7 +887,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
           </div>
           <div class="announce-item">
             <b>Staff data stays separated by business</b>
-            <p>Each owner has their own establishment, branches and team records.</p>
+            <p>Each owner subscription has its own establishment, team records and stock data.</p>
           </div>
           <div class="announce-item">
             <b>Need help?</b>
@@ -1034,7 +1034,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
     <div class="tb-title" id="tbTitle"><span id="tbBizName">StockLine</span><small id="tbVenue">—</small></div>
     <span id="syncDot" title="Synced" style="display:none;width:8px;height:8px;border-radius:50%;background:var(--sage);margin-left:4px;flex-shrink:0"></span>
     <div class="tb-spacer"></div>
-    <button class="btn ghost sm" id="branchSwitchBtn" style="display:none">Switch branch</button>
+    <button class="btn ghost sm" id="branchSwitchBtn" style="display:none"></button>
     <div class="top-clock" id="topClock"></div>
     <button class="bell" id="announceBtn" title="Announcements">📣<span class="dot hidden" id="announceDot"></span></button>
     <button class="bell" id="messagesBtn" title="Messages">💬<span class="dot hidden" id="messagesDot"></span></button>
@@ -1056,7 +1056,7 @@ input.tick{width:20px;height:20px;accent-color:var(--brass);cursor:pointer;margi
 /* =====================================================================
    STOCKLINE — single-file restaurant inventory system
    ===================================================================== */
-window.APP_VERSION='1.0.23';
+window.APP_VERSION='1.0.25';
 const APP_VERSION=window.APP_VERSION;
 const SUPPORT_DEFAULTS={email:'support@stored.app',phone:'',website:'',privacyUrl:'',termsUrl:''};
 function sendLandingFeedback(){
@@ -1510,7 +1510,7 @@ let STOCKS_SUBTAB='stocks'; // active sub-tab on Stocks page
 let STOCKS_CAT=''; // active category filter on Stocks page
 let HIGHLIGHT_ITEM=''; // item name to highlight after notification click
 let SETTINGS_TAB='account'; // active sub-tab on Settings page
-let BRANCH_TAB=null; // active branch sub-tab in Branches name
+let BRANCH_TAB=null; // active subscribed location
 let CATS_TAB='kitchen'; // active sub-tab on Categories page
 let DELIV_CAT_FILTER=''; // active category filter on Deliveries page ('' = all)
 
@@ -1705,7 +1705,7 @@ function applyBrand(){
   const al=$('#authLogo');if(al)al.innerHTML=logoHTML;
   const tl=$('#tbLogo');if(tl)tl.innerHTML=logoHTML;
   const ab=$('#authBrand');if(ab)ab.textContent=bizName;
-  // Top left: business name (large) + current branch name (small below)
+  // Top left: establishment name (large) + current location name (small below)
   const tbBiz=$('#tbBizName');if(tbBiz)tbBiz.textContent=bizName;
   // Get current branch label
   const rawBranchLabel=currentBranch?.label||DB?.venue?.name||'—';
@@ -1924,9 +1924,9 @@ async function showOwnerSignup(push=true){
   const sub=$('#regSub');if(sub)sub.textContent='Your subscription is active. Create the owner account for this business.';
   const usernameF=$('#regUsernameField');if(usernameF)usernameF.style.display='none';
   const estField=$('#regEstField');if(estField)estField.style.display='block';
-  const estLabel=$('#regEstField label');if(estLabel)estLabel.textContent='Business name';
+  const estLabel=$('#regEstField label');if(estLabel)estLabel.textContent='Establishment name';
   const estInput=$('#regEst');if(estInput)estInput.placeholder='e.g. Daniell Restaurant';
-  const estHelp=$('#regEstField div[style*="font-size:12px"]');if(estHelp)estHelp.textContent='This becomes the separate business workspace for the subscriber.';
+  const estHelp=$('#regEstField div[style*="font-size:12px"]');if(estHelp)estHelp.textContent='This becomes the separate establishment workspace for the subscriber.';
   const sel=$('#regEstCode');if(sel){sel.disabled=true;sel.innerHTML='<option value="">Not needed for owners</option>';}
   const btn=$('#regBtn');if(btn){btn.textContent='Create owner account';btn.disabled=true;}
   const checked=await verifyOwnerCheckout();
@@ -2029,7 +2029,7 @@ async function doRegister(){
   $('#regBtn').disabled=true;
   await loadSupabaseSDK();
   if(REGISTER_MODE==='owner'){
-    if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
+    if(!est){$('#regMsg').textContent='Enter your establishment name.';$('#regBtn').disabled=false;return;}
     const checked=OWNER_CHECKOUT?.ok?{ok:true,data:OWNER_CHECKOUT}:await verifyOwnerCheckout();
     if(!checked.ok){$('#regMsg').textContent=checked.error||'Subscription must be active before creating an owner account.';$('#regBtn').disabled=false;return;}
     const paid=checked.data||OWNER_CHECKOUT||{};
@@ -2173,10 +2173,10 @@ async function doRegister(){
   }
   if(REGISTER_MODE!=='join'){
     // Create a new owner workspace, even if other businesses already exist.
-    if(!est){$('#regMsg').textContent='Enter your business name.';$('#regBtn').disabled=false;return;}
+    if(!est){$('#regMsg').textContent='Enter your establishment name.';$('#regBtn').disabled=false;return;}
     const existingLookup=await findBusinessForStaffSignup(est);
     if(existingLookup.error){
-      $('#regMsg').textContent='Could not check this business name yet. Run the updated supabase-security.sql, then try again.';
+      $('#regMsg').textContent='Could not check this establishment name yet. Run the updated supabase-security.sql, then try again.';
       $('#regBtn').disabled=false;
       return;
     }
@@ -2370,7 +2370,7 @@ async function doRegister(){
       estDb.users=estDb.users||[];
       estDb.users.push(newUser);
       estDb.notifications=estDb.notifications||[];
-      const notifText='Account request: '+name+' wants to join '+selectedBranchId+'. Approve in Settings \u2192 Branches name \u2192 Team.';
+      const notifText='Account request: '+name+' wants to join this establishment. Approve in Settings \u2192 Establishment name \u2192 Team.';
       estDb.notifications.push({id:uid(),scope:'boss',text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
       estDb.notifications.push({id:uid(),scope:firstScope,text:notifText,type:'approve',link:{page:'settings'},ts:now(),read:false});
       saveEst(selectedEstId,estDb);
@@ -2542,54 +2542,11 @@ function switchToEstablishment(id){
 }
 
 function renderEstPicker(loginUser){
-  // Non-boss: straight in, no picker
-  if(loginUser.role!=='boss'){
-    SESSION=loginUser;
-    finalizeLogin();
-    return;
-  }
-
-  let branches=[...(DB.branches||[])];
-  if(!branches.find(b=>b.id==='branch_1')){
-    branches.unshift({id:'branch_1',label:DB.venue?.name||DB.brand?.appName||'Main Branch',short:'MAIN'});
-  }
-
-  if(branches.length<=1){
-    SESSION=loginUser;
-    const firstSys=(DB.systems||[]).find(s=>s.branchId===(branches[0]?.id||'branch_1'))||(DB.systems||[])[0];
-    if(firstSys)SCOPE=firstSys.id;
-    finalizeLogin();
-    return;
-  }
-
-  $('#auth').style.display='none';
-  $('#app').style.display='block';
-  const main=$('#main');
-  main.innerHTML='';
-  const wrap=el('div');
-  wrap.style.cssText='max-width:420px;margin:80px auto;padding:20px;';
-  wrap.appendChild(headEl('Owner','Choose Branch','Which branch do you want to open?'));
-
-  branches.forEach(branch=>{
-    const card=el('div','card pad');
-    card.style.cssText='margin-bottom:10px;cursor:pointer;transition:border .15s;border:2px solid transparent;';
-    card.onmouseenter=()=>card.style.borderColor='var(--brass)';
-    card.onmouseleave=()=>card.style.borderColor='transparent';
-    const sys=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branch.id);
-    const itemCount=(DB.items||[]).filter(i=>sys.some(s=>s.id===i.scope)&&!i.unused).length;
-    const staffCount=(DB.users||[]).filter(u=>u.role!=='boss'&&!u.pending&&sys.some(s=>s.id===u.scope)).length;
-    card.innerHTML=`<div class="flex-between"><b style="font-size:17px">${esc(branch.label)}</b><span class="chip" style="font-size:11px">${sys.length} system${sys.length!==1?'s':''}</span></div><div class="suptag" style="margin-top:4px">${itemCount} items &middot; ${staffCount} staff</div>`;
-    card.onclick=()=>{
-      SESSION=loginUser;
-      BRANCH_TAB=branch.id;
-      const firstSys=(DB.systems||[]).find(s=>(s.branchId||'branch_1')===branch.id);
-      SCOPE=firstSys?.id||(DB.systems||[])[0]?.id||'';
-      finalizeLogin();
-    };
-    wrap.appendChild(card);
-  });
-
-  main.appendChild(wrap);
+  SESSION=loginUser;
+  BRANCH_TAB=primaryBranchId();
+  const firstSys=(DB.systems||[]).find(s=>(s.branchId||'branch_1')===BRANCH_TAB)||(DB.systems||[])[0];
+  if(firstSys)SCOPE=firstSys.id;
+  finalizeLogin();
 }
 
 /* ── SUPABASE AUTH ─────────────────────────────────────────────────────── */
@@ -3211,12 +3168,16 @@ function unreadAnnouncements(){
 }
 function currentBranch(){
   const sys=(DB.systems||[]).find(s=>s.id===SCOPE)||(DB.systems||[])[0];
-  const branchId=BRANCH_TAB||sys?.branchId||'branch_1';
+  const branchId=primaryBranchId()||BRANCH_TAB||sys?.branchId||'branch_1';
   return (DB.branches||[]).find(b=>b.id===branchId)||(DB.branches||[])[0]||null;
+}
+function primaryBranchId(){
+  const branches=DB?.branches||[];
+  return (branches.find(b=>b.id==='branch_1')||branches[0]||{}).id||'branch_1';
 }
 function userBranchId(){
   const systems=DB.systems||[];
-  if(SESSION?.role==='boss')return currentBranch()?.id||BRANCH_TAB||'branch_1';
+  if(SESSION?.role==='boss')return primaryBranchId();
   return SESSION?.branchId||(systems.find(s=>s.id===SESSION?.scope)?.branchId)||'branch_1';
 }
 function branchLabelById(id){
@@ -3240,21 +3201,7 @@ function switchBranchInPlace(branchId){
 }
 function branchSwitchModal(){
   if(!SESSION||SESSION.role!=='boss')return;
-  const branches=DB.branches||[];
-  if(branches.length<=1){toast('Only one branch available');return;}
-  const body=el('div');
-  const active=currentBranch();
-  branches.forEach(branch=>{
-    const row=el('div','list-card');
-    row.style.cssText='cursor:pointer;margin-bottom:6px;border:1px solid var(--line);border-radius:10px';
-    const systems=(DB.systems||[]).filter(s=>(s.branchId||'branch_1')===branch.id);
-    row.innerHTML='<div class="flex-between"><div><b>'+esc(branch.label)+'</b><div class="suptag">'+systems.length+' system'+(systems.length!==1?'s':'')+'</div></div>'+(active&&active.id===branch.id?'<span class="chip ok" style="font-size:11px">Current</span>':'')+'</div>';
-    row.onclick=()=>{closeModal();switchBranchInPlace(branch.id);};
-    body.appendChild(row);
-  });
-  const foot=el('div');foot.style.width='100%';
-  const cancel=el('button','btn ghost','Cancel');cancel.style.width='100%';cancel.onclick=closeModal;foot.appendChild(cancel);
-  openModal('Switch branch',body,foot);
+  toast('Each location needs its own subscription and owner account.','bad');
 }
 function buildNav(){
   const sb=$('#sidebar');sb.innerHTML='';
@@ -3297,12 +3244,10 @@ function buildNav(){
   }
   const foot=el('div','side-foot');
   if(SESSION.role==='boss'){
-    const currentBranch=(DB.branches||[]).find(b=>b.id===BRANCH_TAB)||(DB.branches||[])[0];
-    if(currentBranch){
-      const branchRow=el('div');branchRow.style.cssText='margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)';
-      branchRow.innerHTML=`<div class="suptag" style="font-size:10px;margin-bottom:2px">CURRENT BRANCH</div><b style="font-size:13px">${esc(currentBranch.label)}</b>`;
-      foot.appendChild(branchRow);
-    }
+    const locationName=DB.venue?.name||DB.brand?.appName||'Subscribed location';
+    const branchRow=el('div');branchRow.style.cssText='margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)';
+    branchRow.innerHTML=`<div class="suptag" style="font-size:10px;margin-bottom:2px">SUBSCRIBED LOCATION</div><b style="font-size:13px">${esc(locationName)}</b>`;
+    foot.appendChild(branchRow);
   }
   foot.innerHTML+=`<div class="who"><b>${esc(SESSION.name)}</b>${labelForUser(SESSION)}</div>`;
   const lo=el('button','btn ghost sm','Sign out');lo.style.width='100%';lo.onclick=logout;
@@ -3319,8 +3264,8 @@ function buildNav(){
   }
   const branchBtn=$('#branchSwitchBtn');
   if(branchBtn){
-    branchBtn.style.display=(SESSION.role==='boss'&&(DB.branches||[]).length>1)?'inline-flex':'none';
-    branchBtn.onclick=branchSwitchModal;
+    branchBtn.style.display='none';
+    branchBtn.onclick=null;
   }
 }
 function openNav(){$('#sidebar').classList.add('open');$('#navScrim').classList.add('show');document.body.classList.add('nav-open');}
@@ -6999,10 +6944,10 @@ function pageSettings(main){
   // Re-enable when navigating away (handled in render())
   const isBoss=SESSION.role==='boss';
   const isIncharge=SESSION.role==='incharge';
-  main.appendChild(headEl(isBoss?'Owner controls':'General','Settings',isBoss?'Venue, appearance, branches and your account.':'Manage your account and branch settings.'));
+  main.appendChild(headEl(isBoss?'Owner controls':'General','Settings',isBoss?'Establishment name, appearance and your account.':'Manage your account and establishment settings.'));
 
   const allTabs=[
-    {id:'systems',label:'Branches name',roles:['boss','incharge']},
+    {id:'systems',label:'Establishment name',roles:['boss','incharge']},
     {id:'account',label:'General',roles:['boss','incharge','staff']},
     {id:'data',label:'Data',roles:['boss','incharge','staff']},
     {id:'backups',label:isBoss?'Backups & audit':'Audit log',roles:['boss','incharge']},
@@ -7052,47 +6997,10 @@ function settingsVenue(main){
     });
     main.appendChild(lc);
   }
-  // Establishments card
+  // Subscription card
   const estCard=el('div','card pad');estCard.style.marginTop='14px';
-  estCard.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">My Branches</div><div class="suptag" style="margin-bottom:10px">Switch between different venues or branches you own. Each has its own separate data.</div>';
-  const allEsts=[
-    {id:'default',name:(()=>{const d=loadEst('default');return d?.venue?.name||d?.brand?.appName||'Main';})()},
-    ...getEstablishments()
-  ];
-  allEsts.forEach(est=>{
-    const row=el('div','list-card');row.style.marginBottom='6px';
-    const isActive=est.id===ACTIVE_EST_ID;
-    row.innerHTML=`<div class="flex-between"><div><b>${esc(est.name)}</b>${isActive?'<span class="chip ok" style="font-size:11px;margin-left:6px">Active</span>':''}</div></div>`;
-    const ra=el('div','row-actions');ra.style.marginTop='6px';
-    if(!isActive){
-      const sw=el('button','btn ghost tiny','Switch to this');
-      sw.onclick=()=>switchToEstablishment(est.id);
-      ra.appendChild(sw);
-    }
-    if(est.id!=='default'){
-      const del=el('button','btn ghost tiny','Delete');
-      del.onclick=()=>confirmModal('Delete branch?',est.name+' and ALL its data will be permanently removed.',()=>deleteEstablishment(est.id));
-      ra.appendChild(del);
-    }
-    row.appendChild(ra);estCard.appendChild(row);
-  });
-  const addEstBtn=el('button','btn brass sm','+ Add branch');addEstBtn.style.marginTop='10px';
-  addEstBtn.onclick=()=>{
-    const body=el('div');
-    const nameI=input('','e.g. The Anchor \u2014 Camden, Catering Unit 2');
-    body.appendChild(field('Branch name',nameI));
-    const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
-    const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
-    const ok=el('button','btn brass','Create & switch');ok.style.flex='2';
-    ok.onclick=()=>{
-      const n=nameI.value.trim();if(!n){toast('Name required','bad');return;}
-      const id=createEstablishment(n);closeModal();
-      switchToEstablishment(id);
-      toast(n+' created \u2014 please log in','good');
-    };
-    foot.appendChild(cancel);foot.appendChild(ok);openModal('New Branch',body,foot);
-  };
-  estCard.appendChild(addEstBtn);main.appendChild(estCard);
+  estCard.innerHTML='<div class="nav-group-label" style="padding:0 0 10px">Subscription</div><div class="suptag">This account is for one subscribed location. To run another location, create a separate owner subscription.</div>';
+  main.appendChild(estCard);
 }
 
 /* ---- Team ---- */
@@ -7337,51 +7245,21 @@ function settingsSystems(main){
   if(systems)systems.forEach(s=>{if(!s.branchId)s.branchId='branch_1';});
   // In-charge only sees their own branch
   const inchargeBranchId=isIncharge?(SESSION.branchId||(systems.find(s=>s.id===SESSION.scope)?.branchId)||'branch_1'):null;
-  const branches=isBoss?DB.branches:(DB.branches||[]).filter(b=>b.id===inchargeBranchId);
+  const primaryBranch=(DB.branches||[]).find(b=>b.id===primaryBranchId())||(DB.branches||[])[0];
+  const branches=isBoss?[primaryBranch].filter(Boolean):(DB.branches||[]).filter(b=>b.id===inchargeBranchId);
 
   // ensure BRANCH_TAB is valid — but keep it if it's a freshly added branch
   if(!BRANCH_TAB||!branches.find(b=>b.id===BRANCH_TAB)){
     BRANCH_TAB=branches[0]?.id||null;
   }
 
-  // ── Top bar: current branch + Add branch button ──────────────────────
+  // ── Top bar: one subscribed location ──────────────────────
   const topBar=el('div','flex-between no-filter');topBar.style.marginBottom='14px';
 
   const activeBranch=branches.find(b=>b.id===BRANCH_TAB);
   const currentLabel=el('div','suptag');
-  currentLabel.innerHTML='Current branch<br><b style="font-size:15px;color:var(--ink);text-transform:none;letter-spacing:0">'+esc(activeBranch?.label||'Branch')+'</b>';
+  currentLabel.innerHTML='Subscribed location<br><b style="font-size:15px;color:var(--ink);text-transform:none;letter-spacing:0">'+esc(DB.venue?.name||activeBranch?.label||'Location')+'</b><div style="margin-top:4px">Each extra location needs its own subscription.</div>';
   topBar.appendChild(currentLabel);
-
-  if(isBoss){
-    const addBranchBtn=el('button','btn brass sm','+ Add branch');
-    addBranchBtn.onclick=()=>{
-      const body=el('div');
-      const nameI=input('','Branch name (e.g. City Branch, Burwood)');
-      const shortI=input('','Short label (e.g. CITY, BUR)');
-      body.appendChild(field('Branch name',nameI));
-      body.appendChild(field('Short label',shortI,'Optional'));
-      const err=el('div','err');body.appendChild(err);
-      const foot=el('div');foot.style.display='flex';foot.style.gap='10px';foot.style.width='100%';
-      const cancel=el('button','btn ghost','Cancel');cancel.onclick=closeModal;cancel.style.flex='1';
-      const ok=el('button','btn brass','Add branch');ok.style.flex='2';
-      ok.onclick=()=>{
-        const name=nameI.value.trim();if(!name){err.textContent='Branch name required';return;}
-        const short=(shortI.value.trim()||name.slice(0,3)).toUpperCase();
-        const branchId='branch_'+uid();
-        const sys1Id='sys_'+uid();
-        DB.branches=DB.branches||[];
-        DB.branches.push({id:branchId,label:name,short});
-        DB.systems.push({id:sys1Id,label:'System 1',short:'SYS1',branchId});
-        DB.categories[sys1Id]=[];
-        DB.storeTypes[sys1Id]=[{id:'dry',label:'Dry store',builtin:true},{id:'freezer',label:'Freezer',builtin:true},{id:'cold',label:'Cool room',builtin:true}];
-        DB.categoryFood[sys1Id]={};
-        save();closeModal();buildNav();render();toast(name+' branch added. Use Switch branch to open it.','good');
-      };
-      foot.appendChild(cancel);foot.appendChild(ok);
-      openModal('Add branch',body,foot);
-    };
-    topBar.appendChild(addBranchBtn);
-  }
   main.appendChild(topBar);
 
   // ── Selected branch content ───────────────────────────────────────────
@@ -7391,16 +7269,16 @@ function settingsSystems(main){
 
   if(isBoss){
     const bizCard=el('div','card pad');bizCard.style.marginBottom='12px';
-    const bizI=input(DB.venue?.name||DB.brand?.appName||'','Business name');
-    bizCard.appendChild(field('Business name',bizI,'Shown at the top of the app for the owner account.'));
+    const bizI=input(DB.venue?.name||DB.brand?.appName||'','Establishment name');
+    bizCard.appendChild(field('Establishment name',bizI,'Shown at the top of the app for this owner subscription.'));
     const bizErr=el('div','err');bizCard.appendChild(bizErr);
-    const bizSave=el('button','btn brass sm','Save business name');
+    const bizSave=el('button','btn brass sm','Save establishment name');
     bizSave.onclick=()=>{
       const n=bizI.value.trim();
-      if(!n){bizErr.textContent='Business name required.';return;}
+      if(!n){bizErr.textContent='Establishment name required.';return;}
       DB.venue=DB.venue||{};DB.brand=DB.brand||{};
       DB.venue.name=n;DB.brand.appName=n;
-      save();applyBrand();buildNav();bizErr.textContent='';toast('Business name updated','good');
+      save();applyBrand();buildNav();bizErr.textContent='';toast('Establishment name updated','good');
     };
     bizCard.appendChild(bizSave);
     main.appendChild(bizCard);
